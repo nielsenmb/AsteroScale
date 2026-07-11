@@ -5,7 +5,7 @@ All masses/radii in solar units, Teff in K, numax/dnu in muHz.
 import numpy as np
 
 NUMAX_SUN = 3090.0
-TEFF_SUN = 5777.0
+TEFF_SUN = 5772.0
 GSUN_CGS = 27400.0
 MBOL_SUN = 4.74  # IAU absolute bolometric magnitude of the Sun
 
@@ -53,19 +53,35 @@ def numax(M, R, Teff, FeH):
     return NUMAX_SUN * M / R**2 / np.sqrt(Teff / TEFF_SUN) * f_numax(FeH)
 
 
+DNU_SUN = 135.1  # Huber et al. 2011, used to anchor the reference function below
+
+
+def _dnu_ref_raw(Teff, FeH):
+    x = Teff / 1.0e4
+    A = 0.64 * FeH + 1.78
+    lam = -0.55 * FeH + 1.23
+    omega = 22.21
+    phi = 0.48 * FeH + 0.12
+    B = 0.66 * FeH + 134.92
+    return A * np.exp(lam * x) * np.cos(omega * x + phi) + B
+
+
+# Guggenberger+2016's own coefficients don't reproduce DNU_SUN exactly at
+# solar Teff/[Fe/H] (their most solar-like model gave 136.1 muHz -- they
+# attribute the ~1-3 muHz offset to surface effects not in their grid, see
+# their Sec. 2.1). We renormalize so the reference function is anchored to
+# the precisely-known solar value while preserving its Teff/[Fe/H] shape.
+_DNU_REF_NORM = DNU_SUN / _dnu_ref_raw(TEFF_SUN, 0.0)
+
+
 def dnu_ref(Teff, FeH):
     """Guggenberger et al. 2016 (MNRAS 460, 4277) Teff-[Fe/H] reference
     function, replacing the fixed solar Delta-nu in the classic relation.
     Calibrated for -1.0 < [Fe/H] < 0.5, 0.8-2.0 Msun, main sequence to cool
-    red giants (down to numax ~ 6 muHz).
+    red giants (down to numax ~ 6 muHz). Renormalized to equal DNU_SUN
+    exactly at solar Teff/[Fe/H] -- see _DNU_REF_NORM above.
     """
-    x = Teff / 1.0e4
-    A = 0.64 * FeH + 1.78
-    lam = -0.55 * FeH + 1.23
-    omega = 22.12
-    phi = 0.48 * FeH + 0.12
-    B = 0.66 * FeH + 134.92
-    return A * np.exp(lam * x) * np.cos(omega * x + phi) + B
+    return _dnu_ref_raw(Teff, FeH) * _DNU_REF_NORM
 
 
 def dnu(M, R, Teff, FeH):
