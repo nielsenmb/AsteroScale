@@ -1,4 +1,10 @@
-"""Generic any-subset-in -> any-subset-out solver via nested sampling (dynesty)."""
+"""Generic any-subset-in -> any-subset-out solver via nested sampling (dynesty).
+
+Plain numpy by default -- dynesty calls the likelihood one point at a time,
+so jax.jit doesn't pay off here (per-call dispatch overhead dominates for a
+problem this small/serial; see relations.py for how to switch the forward
+pass to JAX if you later move to a vectorized sampler like jaxns).
+"""
 import numpy as np
 import dynesty
 from dynesty.utils import resample_equal

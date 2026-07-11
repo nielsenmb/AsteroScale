@@ -3,7 +3,7 @@ name = "astero-solver"
 version = "0.1.0"
 description = "Marginalizing solver for asteroseismic scaling relations"
 requires-python = ">=3.9"
-dependencies = ["numpy", "dynesty", "matplotlib"]
+dependencies = ["numpy", "dynesty", "matplotlib", "jax"]
 
 [build-system]
 requires = ["setuptools>=61"]

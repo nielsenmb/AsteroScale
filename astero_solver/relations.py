@@ -4,6 +4,15 @@ All masses/radii in solar units, Teff in K, numax/dnu in muHz.
 """
 import numpy as np
 
+# Array backend, swappable for a jax.jit-able forward pass:
+#   import jax.numpy as jnp
+#   from astero_solver import relations
+#   relations.xp = jnp
+# Every function below resolves xp.* at call time (not at import time), so
+# flipping this one line is enough to make the whole forward pass
+# traceable/jittable -- no separate jax version of this file needed.
+xp = np
+
 NUMAX_SUN = 3090.0
 TEFF_SUN = 5772.0
 GSUN_CGS = 27400.0
@@ -46,11 +55,11 @@ def f_numax(FeH):
     approximation used e.g. in Zinn et al. 2019.
     """
     mu = _mean_molecular_weight(FeH)
-    return np.sqrt(mu / _MU_SUN)
+    return xp.sqrt(mu / _MU_SUN)
 
 
 def numax(M, R, Teff, FeH):
-    return NUMAX_SUN * M / R**2 / np.sqrt(Teff / TEFF_SUN) * f_numax(FeH)
+    return NUMAX_SUN * M / R**2 / xp.sqrt(Teff / TEFF_SUN) * f_numax(FeH)
 
 
 DNU_SUN = 135.1  # Huber et al. 2011, used to anchor the reference function below
@@ -63,7 +72,7 @@ def _dnu_ref_raw(Teff, FeH):
     omega = 22.21
     phi = 0.48 * FeH + 0.12
     B = 0.66 * FeH + 134.92
-    return A * np.exp(lam * x) * np.cos(omega * x + phi) + B
+    return A * xp.exp(lam * x) * xp.cos(omega * x + phi) + B
 
 
 # Guggenberger+2016's own coefficients don't reproduce DNU_SUN exactly at
@@ -85,7 +94,7 @@ def dnu_ref(Teff, FeH):
 
 
 def dnu(M, R, Teff, FeH):
-    return dnu_ref(Teff, FeH) * np.sqrt(M / R**3)
+    return dnu_ref(Teff, FeH) * xp.sqrt(M / R**3)
 
 
 def luminosity(R, Teff):
@@ -93,7 +102,7 @@ def luminosity(R, Teff):
 
 
 def logg(M, R):
-    return np.log10(GSUN_CGS * M / R**2)
+    return xp.log10(GSUN_CGS * M / R**2)
 
 
 def mean_density(M, R):
@@ -108,7 +117,7 @@ def distance(plx):
 
 def mbol(L):
     """Absolute bolometric magnitude from luminosity (solar units)."""
-    return MBOL_SUN - 2.5 * np.log10(L)
+    return MBOL_SUN - 2.5 * xp.log10(L)
 
 
 def bc_g(Teff):
@@ -121,13 +130,60 @@ def bc_g(Teff):
     return -0.068 - 0.008 * x
 
 
+def bc_bp(Teff):
+    """Rough bolometric correction for Gaia BP band, linear near solar Teff.
+
+    Placeholder only, calibrated to give M_BP,sun ~ 5.03 (Mbol_sun - BC_BP =
+    4.74 - (-0.29) = 5.03), matching approximate published Gaia solar colors
+    (BP-RP_sun ~ 0.82). Swap in a real BC grid for anything more serious.
+    """
+    x = (Teff - TEFF_SUN) / 1000.0
+    return -0.29 - 0.30 * x
+
+
+def bc_rp(Teff):
+    """Rough bolometric correction for Gaia RP band, linear near solar Teff.
+
+    Placeholder only, calibrated to give M_RP,sun ~ 4.21 (Mbol_sun - BC_RP =
+    4.74 - 0.53 = 4.21), matching approximate published Gaia solar colors.
+    Swap in a real BC grid for anything more serious.
+    """
+    x = (Teff - TEFF_SUN) / 1000.0
+    return 0.53 + 0.15 * x
+
+
+# Gaia DR2 extinction coefficients (Danielski et al. 2018), roughly constant
+# for G2V-like SEDs; A_0 here stands in for a monochromatic ~550nm
+# extinction, estimated back out from A_G. Fine for back-of-envelope
+# reddening; the true coefficients have some Teff/extinction dependence
+# this ignores.
+_A_G_OVER_A0 = 0.789
+_A_BP_OVER_A0 = 1.002
+_A_RP_OVER_A0 = 0.589
+
+
+def a_bp(A_G):
+    return (_A_BP_OVER_A0 / _A_G_OVER_A0) * A_G
+
+
+def a_rp(A_G):
+    return (_A_RP_OVER_A0 / _A_G_OVER_A0) * A_G
+
+
+def bp_rp_color(BP_mag, RP_mag):
+    """Gaia BP-RP color. Note this comes out independent of distance --
+    the distance modulus cancels between BP_mag and RP_mag -- so it
+    constrains Teff/extinction without needing a parallax at all."""
+    return BP_mag - RP_mag
+
+
 def abs_g_mag(Mbol, BC_G):
     return Mbol - BC_G
 
 
 def app_g_mag(M_G, d, A_G):
     """Apparent Gaia G magnitude given absolute mag, distance (pc), extinction."""
-    return M_G + 5 * np.log10(d) - 5 + A_G
+    return M_G + 5 * xp.log10(d) - 5 + A_G
 
 
 # name -> (function, argument names). Order matters: args must already
@@ -142,6 +198,15 @@ DERIVED = {
     "d": (distance, ("plx",)),
     "Mbol": (mbol, ("L",)),
     "BC_G": (bc_g, ("Teff",)),
+    "BC_BP": (bc_bp, ("Teff",)),
+    "BC_RP": (bc_rp, ("Teff",)),
+    "A_BP": (a_bp, ("A_G",)),
+    "A_RP": (a_rp, ("A_G",)),
     "M_G": (abs_g_mag, ("Mbol", "BC_G")),
+    "M_BP": (abs_g_mag, ("Mbol", "BC_BP")),
+    "M_RP": (abs_g_mag, ("Mbol", "BC_RP")),
     "G_mag": (app_g_mag, ("M_G", "d", "A_G")),
+    "BP_mag": (app_g_mag, ("M_BP", "d", "A_BP")),
+    "RP_mag": (app_g_mag, ("M_RP", "d", "A_RP")),
+    "BP_RP": (bp_rp_color, ("BP_mag", "RP_mag")),
 }
