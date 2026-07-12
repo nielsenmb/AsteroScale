@@ -59,8 +59,18 @@ constraint.
 | `A_G` | extinction (Gaia G band) | mag |
 | `FeH` | metallicity [Fe/H] | dex |
 
-Default priors are broad uniform bounds (see `solver.DEFAULT_PRIORS`).
-Override per-parameter via `Solver(priors={"Teff": (5000, 6500)})`.
+Default priors aim for "plausible for a random field star", not
+"uninformative": mass follows a Salpeter-slope power law (fewer high-mass
+stars), radius is log-uniform, parallax follows the Bailer-Jones (2015)
+exponentially-decreasing space density prior used for Gaia distance
+inference, extinction is exponential (favoring low values), and [Fe/H] is a
+normal distribution truncated to the range the metallicity corrections
+above are actually calibrated over. See `priors.py` and
+`solver.DEFAULT_PRIORS` for exact parameters. Override per-parameter via
+`Solver(priors={"Teff": (5000, 6500)})` -- a `(lo, hi)` tuple is shorthand
+for uniform, or pass any object with a `.ppf(u)` method (a frozen
+`scipy.stats` distribution, one of the classes in `priors.py`, or your own)
+directly for something else.
 
 ## Derived quantities
 
@@ -71,6 +81,8 @@ Override per-parameter via `Solver(priors={"Teff": (5000, 6500)})`.
 | `L` | luminosity | Stefan-Boltzmann |
 | `logg` | surface gravity | classic scaling |
 | `rho` | mean density | M/R^3 |
+| `FWHM_env` | FWHM of the p-mode power excess envelope | Mosser et al. 2012a: 0.66 * numax^0.88 |
+| `A_env` | peak bolometric oscillation amplitude (ppm) | Kjeldsen & Bedding 1995 L/M scaling, normalized to A_env,sun = 3.6 ppm (Huber et al. 2011) |
 | `d` | distance | 1000/plx |
 | `Mbol` | absolute bolometric magnitude | from L |
 | `BC_G`, `BC_BP`, `BC_RP` | bolometric corrections, Gaia G/BP/RP | linear placeholders near solar Teff -- see caveat below |
@@ -90,15 +102,70 @@ citations.
 - `astero_solver.Solver(priors=None, nlive=500, seed=None)` -- for reuse
   across multiple calls, or custom priors.
   - `.solve(given, want, dlogz=0.5, print_progress=False, return_results=False)`
-    -- `given` is `{name: (value, error)}`; `want` is a list of names.
-    Returns `{name: array_of_posterior_samples}`. Pass `return_results=True`
-    to also get dynesty's raw `Results` object (evidence, run diagnostics).
+    -- `want` is a list of names. Each value in `given` can be:
+    - **a plain number** -- treated as exactly known. If *every* given
+      value is like this, `solve()` skips the sampler entirely and returns
+      a fast point estimate (a single `scipy.optimize.least_squares` call
+      if there are more free fundamentals than exact fundamentals given,
+      or just a direct forward evaluation if every fundamental is pinned).
+      Returns plain floats, not posterior samples.
+    - **a `(mean, error)` tuple** -- wrapped as `scipy.stats.norm(mean, error)`.
+    - **any object with `.logpdf`/`.ppf`** -- used directly, e.g. for
+      asymmetric or otherwise non-Gaussian uncertainty on a measurement
+      (`scipy.stats.skewnorm(...)`, or your own).
+
+    Mixing types is fine -- e.g. `{"Teff": 5777.0, "FeH": (0.0, 0.05), ...}`
+    pins Teff exactly (reducing the sampled dimensionality by one) while
+    the rest still go through nested sampling as usual. If a distribution
+    is given for a *fundamental* parameter specifically, it replaces that
+    parameter's prior directly (more efficient than adding a separate
+    likelihood term, and equivalent when it's the only constraint on that
+    dimension).
+
+    Returns `{name: array_of_posterior_samples}` for the sampled path, or
+    `{name: float}` for the point-estimate path. Pass `return_results=True`
+    to also get dynesty's raw `Results` object (or the `scipy.optimize`
+    result, for the point-estimate path).
+  - `.predict(want)` -- compute additional quantities from the
+    posterior/point estimate of the *last* `solve()` call, without
+    re-running the sampler:
+    ```python
+    solver.solve({"Teff": (5777, 50), "numax": (3090, 30), "dnu": (135.1, 1.0)}, want=["M", "R"])
+    extra = solver.predict(["L", "rho", "logg", "A_env", "FWHM_env"])
+    ```
+    Works for both the nested-sampling path (returns arrays over the same
+    posterior) and the point-estimate path (returns floats). Raises if
+    called before any `solve()`.
 - `astero_solver.summarize(samples, params=None)` -- prints mean/std and
   16/50/84th percentiles for each quantity.
 - `astero_solver.plot_posterior(samples, params=None)` -- quick pairwise
   scatter/histogram grid for a fast visual sanity check on degeneracies.
 - `astero_solver.relations` -- the scaling relations module, if you want to
   call individual functions directly (e.g. `relations.f_numax(-1.5)`).
+
+## Input validation
+
+`solve()` checks its inputs before running anything expensive:
+
+- Unknown quantity names in `given` or `want` raise `KeyError` immediately
+  (previously this could fail deep inside a sampler run, or silently on a
+  `want` typo since it wasn't checked at all).
+- Malformed `given` entries -- wrong tuple length, a non-positive or
+  non-finite error, a non-finite value, an unrecognized type -- raise
+  `ValueError`/`TypeError` with the offending name and value.
+- Values that are physically impossible (negative mass/radius/Teff/parallax,
+  negative extinction) raise `ValueError`.
+- Values that are merely unusual (Teff outside ~3000-10000 K, [Fe/H]
+  outside -2.5 to 0.75, etc.) raise a `UserWarning` rather than an error --
+  might be exactly what you intend, but it's also the classic
+  wrong-units/typo mistake, so it's flagged either way.
+- For the point-estimate path (see below), if the given constraints turn
+  out to be mutually inconsistent -- no combination of the free parameters
+  can satisfy all of them -- a `UserWarning` reports the largest residual
+  rather than silently returning a poor fit that looks like a real answer.
+
+See `validation.py` for the exact rules (`_POSITIVE`, `_NONNEGATIVE`,
+`_SANITY_RANGES`) if you want to adjust them.
 
 ## Known caveats
 

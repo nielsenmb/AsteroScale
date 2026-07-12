@@ -110,6 +110,37 @@ def mean_density(M, R):
     return M / R**3
 
 
+def envelope_fwhm(numax):
+    """FWHM of the Gaussian oscillation power envelope, muHz.
+
+    Mosser et al. 2012 (A&A 537, A30), delta_nu_env = 0.66 * numax^0.88.
+    Calibrated on Kepler red giants -- extrapolating to main-sequence/
+    subgiant stars is less certain; at least one study (Lund et al. 2017 on
+    dwarfs) finds the oscillation and granulation timescales decouple in a
+    way this single power law doesn't capture there.
+    """
+    return 0.66 * numax**0.88
+
+
+A_ENV_SUN = 3.6  # ppm, bolometric envelope amplitude (Huber et al. 2011; still
+# the reference value used e.g. in the pySYD pipeline)
+
+
+def envelope_amplitude(M, L, Teff):
+    """Peak bolometric oscillation amplitude, ppm.
+
+    Kjeldsen & Bedding 1995 (A&A 293, 87) "L/M" relation: amplitude scales
+    with L/M and a Teff power law. r=2 is their empirical fit to
+    observations; r=1.5 is the theoretical adiabatic value some authors use
+    instead (e.g. Michel et al. 2008; Mosser et al. 2010). This is the
+    bolometric amplitude -- converting to a specific photometric passband
+    needs an additional bolometric correction factor c_K(Teff)
+    (Ballot et al. 2011), not included here.
+    """
+    r = 2.0
+    return A_ENV_SUN * (L / M) / (Teff / TEFF_SUN) ** r
+
+
 def distance(plx):
     """Distance in pc from parallax in mas."""
     return 1000.0 / plx
@@ -195,6 +226,8 @@ DERIVED = {
     "L": (luminosity, ("R", "Teff")),
     "logg": (logg, ("M", "R")),
     "rho": (mean_density, ("M", "R")),
+    "FWHM_env": (envelope_fwhm, ("numax",)),
+    "A_env": (envelope_amplitude, ("M", "L", "Teff")),
     "d": (distance, ("plx",)),
     "Mbol": (mbol, ("L",)),
     "BC_G": (bc_g, ("Teff",)),
