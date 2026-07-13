@@ -6,15 +6,16 @@ problem this small/serial; see relations.py for how to switch the forward
 pass to JAX if you later move to a vectorized sampler like jaxns).
 """
 import numpy as np
-import scipy.stats as st
 from scipy import optimize
 import dynesty
 from dynesty.utils import resample_equal
 
 from .relations import DERIVED, FUNDAMENTAL
-from .priors import TruncatedPowerLaw, ParallaxPrior
+from .priors import (
+    TruncatedPowerLaw, ParallaxPrior, Normal, Uniform, Exponential,
+    TruncatedNormal,
+)
 from . import validation
-from . import distributions as dist
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
 # distributions, the classes in priors.py, or your own custom class (e.g.
@@ -22,16 +23,20 @@ from . import distributions as dist
 # These defaults aim for "plausible for a random field star", not
 # "uninformative" -- a flat prior over mass, say, implies high-mass stars
 # are as common as low-mass ones, which is badly wrong.
+#
+# priors.py's classes are used here rather than scipy.stats, not because
+# scipy.stats can't do this, but because its frozen-distribution objects
+# are much slower for the scalar, one-value-at-a-time .ppf/.logpdf calls
+# this solver actually makes -- see priors.py's module docstring.
 DEFAULT_PRIORS = {
-    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=2.0),  # Salpeter IMF slope
-    "R": st.loguniform(0.5, 20.0),        # log-uniform: R spans >1 decade
-    "Teff": dist.uniform(4000.0, 3000.0),   # flat 4000-7000 K, no strong prior
+    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
+    "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
+    "Teff": Uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
     "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
-    "A_G": st.expon(scale=0.2),           # most stars nearby have low extinction
-    "FeH": st.truncnorm(                  # solar-neighborhood metallicity spread,
-        (-1.0 - (-0.1)) / 0.25, (0.5 - (-0.1)) / 0.25,  # truncated to the range
-        loc=-0.1, scale=0.25,             # the dnu metallicity correction is
-    ),                                     # actually calibrated over
+    "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
+    "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
+        loc=-0.1, scale=0.25, low=-1.0, high=0.5,  # truncated to the range the dnu
+    ),                                        # metallicity correction is calibrated over
 }
 
 
@@ -39,10 +44,11 @@ def _as_distribution(p):
     """Allow priors={'Teff': (mean, error)} as shorthand for a Gaussian --
     the same convention (mean, error) tuples have in `given`, for
     consistency. For a uniform prior specifically, pass
-    scipy.stats.uniform(loc, scale) (or any other distribution) directly."""
+    priors.Uniform(loc, scale) (or scipy.stats.uniform, or any other
+    distribution) directly."""
     if isinstance(p, tuple):
         mean, err = p
-        return dist.norm(loc=mean, scale=err)
+        return Normal(loc=mean, scale=err)
     return p
 
 
@@ -52,7 +58,7 @@ def _parse_given(given):
 
     Each given[name] can be:
       - a plain number -- treated as exactly known.
-      - a (mean, error) tuple -- wrapped as scipy.stats.norm(mean, error).
+      - a (mean, error) tuple -- wrapped as a Gaussian (priors.Normal).
       - any object with .logpdf and/or .ppf -- used directly, e.g. for
         asymmetric or otherwise non-Gaussian uncertainties.
     """
@@ -60,7 +66,7 @@ def _parse_given(given):
     for name, value in given.items():
         if isinstance(value, tuple):
             mean, err = value
-            constraints[name] = st.norm(loc=mean, scale=err)
+            constraints[name] = Normal(loc=mean, scale=err)
         elif hasattr(value, "logpdf") or hasattr(value, "ppf"):
             constraints[name] = value
         else:
@@ -190,7 +196,7 @@ class Solver:
             if name in FUNDAMENTAL:
                 continue
             eps = max(abs(target) * 1e-3, 1e-6)
-            likelihood_terms[name] = st.norm(loc=target, scale=eps)
+            likelihood_terms[name] = Normal(loc=target, scale=eps)
 
         free_fundamentals = [p for p in FUNDAMENTAL if p not in fixed_fund]
 
@@ -241,7 +247,7 @@ class Solver:
             loglike, prior_transform, ndim, nlive=self.nlive, rstate=self.rng,
             sample=self.sample, bound=self.bound,
         )
-        sampler.run_nested(dlogz=dlogz, print_progress=print_progress)
+        sampler.run_nested(dlogz=dlogz, print_progress=print_progress, save_bounds=False)
         results = sampler.results
 
         weights = np.exp(results.logwt - results.logz[-1])

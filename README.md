@@ -117,7 +117,7 @@ citations.
       if there are more free fundamentals than exact fundamentals given,
       or just a direct forward evaluation if every fundamental is pinned).
       Returns plain floats, not posterior samples.
-    - **a `(mean, error)` tuple** -- wrapped as `scipy.stats.norm(mean, error)`.
+    - **a `(mean, error)` tuple** -- wrapped as a Gaussian (`priors.Normal`).
     - **any object with `.logpdf`/`.ppf`** -- used directly, e.g. for
       asymmetric or otherwise non-Gaussian uncertainty on a measurement
       (`scipy.stats.skewnorm(...)`, or your own).
@@ -241,18 +241,53 @@ See `validation.py` for the exact rules (`_POSITIVE`, `_NONNEGATIVE`,
   posterior -- pass `return_results=True` and check `results.eff` /
   effective sample size if a result looks suspiciously narrow.
 
-## Performance note (JAX)
+## Performance note (JAX, and scipy.stats vs. hand-written priors)
+
+`priors.py`'s distribution classes (`Normal`, `Uniform`, `Exponential`,
+`TruncatedNormal`, `TruncatedPowerLaw`, `ParallaxPrior`) are hand-written
+using `scipy.special` primitives directly (`erfinv`, `gammaincinv`, ...)
+rather than `scipy.stats`'s frozen-distribution objects, which `Solver`
+used originally. Benchmarked (scalar calls, i.e. dynesty's actual calling
+pattern, one point at a time):
+
+| distribution | scipy.stats | hand-written | speedup |
+|---|---|---|---|
+| Normal | 13,300 calls/s | 592,000 calls/s | ~44x |
+| Uniform | 13,700 calls/s | 895,000 calls/s | ~65x |
+| Exponential | 11,600 calls/s | 724,000 calls/s | ~62x |
+| TruncatedNormal | 2,900 calls/s | 517,000 calls/s | ~180x |
+| Parallax (Gamma-based) | 1,500 calls/s | 352,000 calls/s | ~230x |
+
+This isn't scipy.stats being unpolished -- its overhead is the cost of a
+very general, mostly batch-oriented interface, and it's *fast* when called
+on whole arrays at once (see the JAX comparison below). It's just a poor
+fit for dynesty's one-value-at-a-time calls specifically. In practice
+dynesty's own per-iteration bookkeeping still dominates total `solve()`
+time (this doesn't turn a 10s run into a 0.1s run), but it's a real,
+non-negligible contributor, not a rounding error.
+
+Custom priors/`given` distributions you supply yourself (a `scipy.stats`
+object, or anything else with `.ppf`/`.logpdf`) work exactly as before --
+this only changes what the *defaults* are built from.
 
 `relations.py` uses a module-level `xp = np` that every function resolves
 at call time, so the whole forward pass can be made JAX-traceable by
 setting `relations.xp = jax.numpy` -- no forked codebase needed. This
 isn't wired up by default: `dynesty`'s default sampler calls the likelihood
 one point at a time, so `jax.jit`'s per-call dispatch overhead actually
-made things ~1.7x *slower* in testing, not faster. It would be worth
-revisiting if this ever moves to a genuinely vectorized/batched sampler
-(e.g. [jaxns](https://github.com/Joshuaalbert/jaxns), which vectorizes the
-entire nested sampling loop in JAX/XLA) where JIT has something to
-amortize against.
+made things ~1.7x *slower* in testing, not faster -- and the same
+scalar-vs-batched pattern shows up for the distributions above: a
+benchmarked jitted JAX `.ppf()` call (115,927 calls/s) was still ~9x
+*slower* than the hand-written scipy.special version here (5,370,428
+calls/s) at the scalar-call granularity dynesty actually uses, because
+per-call dispatch overhead dominates at that scale regardless of whether
+the function itself is jitted. JAX only wins once you can batch many
+calls into one dispatch (412,034,383 values/s for JAX `vmap`+jit vs.
+36,732,531 for scipy.stats and 80,736,547 for scipy.special, all batched)
+-- which is the shape of a genuinely vectorized/batched sampler (e.g.
+[jaxns](https://github.com/Joshuaalbert/jaxns), which vectorizes the
+entire nested sampling loop in JAX/XLA), not a per-point speedup on the
+current dynesty-based architecture.
 
 `distributions.py` contains JAX-jittable prior distribution classes
 (`uniform`, `normal`, `beta`, `truncsine`, plus a generic wrapper for
