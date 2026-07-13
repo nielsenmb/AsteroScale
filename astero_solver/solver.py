@@ -14,6 +14,7 @@ from dynesty.utils import resample_equal
 from .relations import DERIVED, FUNDAMENTAL
 from .priors import TruncatedPowerLaw, ParallaxPrior
 from . import validation
+from . import distributions as dist
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
 # distributions, the classes in priors.py, or your own custom class (e.g.
@@ -22,9 +23,9 @@ from . import validation
 # "uninformative" -- a flat prior over mass, say, implies high-mass stars
 # are as common as low-mass ones, which is badly wrong.
 DEFAULT_PRIORS = {
-    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
+    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=2.0),  # Salpeter IMF slope
     "R": st.loguniform(0.5, 20.0),        # log-uniform: R spans >1 decade
-    "Teff": st.uniform(4000.0, 3000.0),   # flat 4000-7000 K, no strong prior
+    "Teff": dist.uniform(4000.0, 3000.0),   # flat 4000-7000 K, no strong prior
     "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
     "A_G": st.expon(scale=0.2),           # most stars nearby have low extinction
     "FeH": st.truncnorm(                  # solar-neighborhood metallicity spread,
@@ -35,11 +36,13 @@ DEFAULT_PRIORS = {
 
 
 def _as_distribution(p):
-    """Allow priors={'Teff': (lo, hi)} as shorthand for a uniform
-    distribution, alongside passing any object with a .ppf directly."""
+    """Allow priors={'Teff': (mean, error)} as shorthand for a Gaussian --
+    the same convention (mean, error) tuples have in `given`, for
+    consistency. For a uniform prior specifically, pass
+    scipy.stats.uniform(loc, scale) (or any other distribution) directly."""
     if isinstance(p, tuple):
-        lo, hi = p
-        return st.uniform(lo, hi - lo)
+        mean, err = p
+        return dist.norm(loc=mean, scale=err)
     return p
 
 
@@ -66,10 +69,19 @@ def _parse_given(given):
 
 
 class Solver:
-    def __init__(self, priors=None, nlive=500, seed=None):
+    def __init__(self, priors=None, nlive=500, seed=None, sample="auto", bound="multi"):
+        """
+        sample, bound: passed straight through to dynesty.NestedSampler --
+        e.g. sample="rwalk" instead of the default "auto" heuristic, which
+        can help for narrower/more correlated posteriors (many simultaneous
+        tight constraints) where "auto"'s pick doesn't mix well. See
+        dynesty's docs for the full set of options.
+        """
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
         self.nlive = nlive
+        self.sample = sample
+        self.bound = bound
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
         # used by predict() to derive further quantities without resampling
@@ -190,6 +202,27 @@ class Solver:
             self._last_fund = fixed_fund
             return {name: full[name] for name in want}
 
+        if not likelihood_terms:
+            # Every given constraint landed on a fundamental and became a
+            # prior directly (see above), leaving nothing for the
+            # likelihood -- it's flat everywhere. That's not actually a
+            # sampling problem, it's a prior-predictive draw: sample the
+            # (possibly-overridden) priors directly instead of handing
+            # dynesty a constant log-likelihood, which it can technically
+            # handle but warns about ("likelihood plateau") and gains
+            # nothing from.
+            n = max(self.nlive, 2000)
+            u = self.rng.uniform(size=(n, len(free_fundamentals)))
+            fund = {p: priors[p].ppf(u[:, j]) for j, p in enumerate(free_fundamentals)}
+            for k, v in fixed_fund.items():
+                fund[k] = np.full(n, v)
+            full = self._forward(fund)
+            self._last_fund = fund
+            out = {name: full[name] for name in want}
+            if return_results:
+                out["_results"] = None
+            return out
+
         ndim = len(free_fundamentals)
 
         def prior_transform(u):
@@ -205,7 +238,8 @@ class Solver:
                               for name, dist_obj in likelihood_terms.items()))
 
         sampler = dynesty.NestedSampler(
-            loglike, prior_transform, ndim, nlive=self.nlive, rstate=self.rng
+            loglike, prior_transform, ndim, nlive=self.nlive, rstate=self.rng,
+            sample=self.sample, bound=self.bound,
         )
         sampler.run_nested(dlogz=dlogz, print_progress=print_progress)
         results = sampler.results

@@ -67,10 +67,18 @@ inference, extinction is exponential (favoring low values), and [Fe/H] is a
 normal distribution truncated to the range the metallicity corrections
 above are actually calibrated over. See `priors.py` and
 `solver.DEFAULT_PRIORS` for exact parameters. Override per-parameter via
-`Solver(priors={"Teff": (5000, 6500)})` -- a `(lo, hi)` tuple is shorthand
-for uniform, or pass any object with a `.ppf(u)` method (a frozen
-`scipy.stats` distribution, one of the classes in `priors.py`, or your own)
-directly for something else.
+`Solver(priors={...})`: a `(mean, error)` tuple is shorthand for a
+Gaussian (same convention as `given`), or pass any object with a `.ppf(u)`
+method (a frozen `scipy.stats` distribution, one of the classes in
+`priors.py`, or your own) directly for something else -- including
+`scipy.stats.uniform(loc, scale)` if you specifically want uniform.
+
+`Solver(..., sample="auto", bound="multi")` are passed straight through to
+`dynesty.NestedSampler`. The default `sample="auto"` heuristic doesn't
+always pick well for narrow or strongly correlated posteriors (e.g. many
+simultaneous tight constraints); `sample="rwalk"` or `"rslice"` can help,
+and dynesty's own runtime warnings will suggest this when it detects the
+problem itself. See dynesty's docs for the full set of options.
 
 ## Derived quantities
 
@@ -99,8 +107,8 @@ citations.
 - `astero_solver.solve(given, want, **kwargs)` -- one-off convenience
   wrapper. Reuses a shared default `Solver` unless `nlive`/`priors`/`seed`
   are passed, in which case a fresh one is created.
-- `astero_solver.Solver(priors=None, nlive=500, seed=None)` -- for reuse
-  across multiple calls, or custom priors.
+- `astero_solver.Solver(priors=None, nlive=500, seed=None, sample="auto", bound="multi")`
+  -- for reuse across multiple calls, custom priors, or sampler tuning.
   - `.solve(given, want, dlogz=0.5, print_progress=False, return_results=False)`
     -- `want` is a list of names. Each value in `given` can be:
     - **a plain number** -- treated as exactly known. If *every* given
@@ -113,6 +121,17 @@ citations.
     - **any object with `.logpdf`/`.ppf`** -- used directly, e.g. for
       asymmetric or otherwise non-Gaussian uncertainty on a measurement
       (`scipy.stats.skewnorm(...)`, or your own).
+
+    A distribution given for a *fundamental* parameter specifically
+    replaces its prior directly, rather than adding a separate likelihood
+    term (more efficient, and equivalent when it's the only constraint on
+    that dimension). If this ends up being true for every given value --
+    e.g. `{"M": (1.0, 0.05), "R": (1.0, 0.02), "Teff": (5777, 50)}` -- the
+    likelihood is flat everywhere, so `solve()` skips dynesty and draws
+    directly from the (overridden) priors instead. This is the same
+    result dynesty would give (a flat likelihood makes nested sampling
+    mathematically equivalent to prior-predictive sampling), just without
+    the "likelihood plateau" warning and wasted run time.
 
     Mixing types is fine -- e.g. `{"Teff": 5777.0, "FeH": (0.0, 0.05), ...}`
     pins Teff exactly (reducing the sampled dimensionality by one) while
@@ -142,6 +161,27 @@ citations.
   scatter/histogram grid for a fast visual sanity check on degeneracies.
 - `astero_solver.relations` -- the scaling relations module, if you want to
   call individual functions directly (e.g. `relations.f_numax(-1.5)`).
+- `astero_solver.solve_many(targets, want, priors=None, nlive=500, sample="auto", bound="multi", n_jobs=None, base_seed=0, show_progress=False)`
+  -- solve many independent targets in parallel (one process per target, up
+  to `n_jobs` at a time). `targets` is `{target_id: given_dict}`; `want` is
+  either one list applied to every target or `{target_id: want_list}` for
+  per-target requests. Returns `{target_id: solve()_output}` in the
+  original target order. A target whose `solve()` call raises gets
+  `{"_error": "..."}` instead of aborting the whole batch.
+
+  Each target is a fully independent problem -- this is deliberately just a
+  parallel loop, not joint/hierarchical inference (there's no shared state
+  or population-level parameters across targets; if you want that, you
+  need a different tool, e.g. a proper hierarchical Bayesian model).
+
+  Uses multiprocessing's `spawn` start method (not the Linux default
+  `fork`) and caps each worker to a single BLAS thread
+  (`OMP_NUM_THREADS=1` etc.) -- otherwise numpy/scipy's linear algebra
+  backend can spawn its own threads *per worker process*, and N worker
+  processes each doing that oversubscribes the machine's cores, eating
+  into (or reversing) the speedup from parallelizing at all. Custom
+  `priors` must be picklable (frozen `scipy.stats` distributions and the
+  classes in `priors.py` are; anything JAX-jitted likely isn't).
 
 ## Input validation
 

@@ -2,6 +2,7 @@ from .solver import Solver
 from . import relations
 from .utils import summarize
 from .viz import plot_posterior
+from .batch import solve_many
 
 _default_solver = None
 
@@ -28,4 +29,4 @@ def solve(given, want, nlive=None, priors=None, seed=None, **solve_kwargs):
     return _default_solver.solve(given, want, **solve_kwargs)
 
 
-__all__ = ["Solver", "relations", "solve", "summarize", "plot_posterior"]
+__all__ = ["Solver", "relations", "solve", "solve_many", "summarize", "plot_posterior"]

@@ -73,18 +73,18 @@ class beta:
 
         self.median = self.ppf(0.5)
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def _transformx(self, x):
         """Translates and scales the input x to the unit interval according
         to the loc and scale parameters."""
         return (x - self.loc) / self.scale
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def _inverse_transform(self, x):
         """Invert scaling on input."""
         return x * self.scale + self.loc
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def pdf(self, x, norm=True):
         """Return PDF. Normalized to unit integral by default."""
         _x = self._transformx(x)
@@ -99,7 +99,7 @@ class beta:
 
         return y
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def logpdf(self, x, norm=True):
         """Return log-PDF. Normalized to unit integral by default."""
         x = jnp.array(x)
@@ -129,7 +129,7 @@ class beta:
 
         return y
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def ppf(self, y):
         _x = self.betaincinv(self.a, self.b, y)
 
@@ -137,7 +137,7 @@ class beta:
 
         return x
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def update_x(self, x, a, b, p, a1, b1, afac):
         err = jsp.betainc(a, b, x) - p
         t = jnp.exp(a1 * jnp.log(x) + b1 * jnp.log(1.0 - x) + afac)
@@ -150,7 +150,7 @@ class beta:
 
         return x, t
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def func_1(self, a, b, p):
         pp = jnp.where(p < 0.5, p, 1.0 - p)
         t = jnp.sqrt(-2.0 * jnp.log(pp))
@@ -163,7 +163,7 @@ class beta:
         ) * (al + 5.0 / 6.0 - 2.0 / (3.0 * h))
         return a / (a + b * jnp.exp(2.0 * w))
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def func_2(self, a, b, p):
         lna = jnp.log(a / (a + b))
         lnb = jnp.log(b / (a + b))
@@ -177,7 +177,7 @@ class beta:
             1.0 - jnp.power(b * w * (1.0 - p), 1.0 / b),
         )
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def compute_x(self, p, a, b):
         return jnp.where(
             jnp.logical_and(a >= 1.0, b >= 1.0),
@@ -185,7 +185,7 @@ class beta:
             self.func_2(a, b, p),
         )
 
-    @partial(jax.jit, static_argnums=(0,))
+#    @partial(jax.jit, static_argnums=(0,))
     def betaincinv(self, a, b, p):
         a1 = a - 1.0
         b1 = b - 1.0
@@ -295,12 +295,12 @@ class uniform:
 
     @partial(jax.jit, static_argnums=(0,))
     def ppf(self, y):
-        y = jnp.array(y)
+        #y = jnp.array(y)
         x = y * (self.b - self.a) + self.a
         return x
 
 
-class normal:
+class norm:
     def __init__(self, loc=0, scale=1, rng=None):
         """Normal distribution class.
 
@@ -333,24 +333,24 @@ class normal:
         self.mean = jnp.trapezoid(x * jnp.array([self.pdf(_x) for _x in x]), x)
         self.median = self.ppf(0.5)
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def pdf(self, x, norm=True):
         y = jnp.exp(self.fac * (x - self.loc) ** 2)
         Y = jax.lax.cond(norm, lambda y: y * self.norm, lambda y: y, y)
         return Y
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def logpdf(self, x, norm=True):
         y = self.fac * (x - self.loc) ** 2
         Y = jax.lax.cond(norm, lambda y: y + self.lognorm, lambda y: y, y)
         return Y
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def cdf(self, x):
         y = 0.5 * (1 + jsp.erf((x - self.loc) / (jnp.sqrt(2) * self.scale)))
         return y
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def ppf(self, y):
         x = self.loc + self.scale * jnp.sqrt(2) * jsp.erfinv(2 * y - 1)
         return x
@@ -376,25 +376,25 @@ class truncsine:
         self.mean = jnp.trapezoid(x * jnp.array([self.pdf(_x) for _x in x]), x)
         self.median = self.ppf(0.5)
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def pdf(self, x):
         T = jax.lax.lt(x, 0.0) | jax.lax.lt(jnp.pi / 2, x)
         y = jax.lax.cond(T, lambda: 0.0, lambda: jnp.sin(x))
         return y
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def logpdf(self, x):
         T = jax.lax.lt(x, 0.0) | jax.lax.lt(jnp.pi / 2, x)
         y = jax.lax.cond(T, lambda: -jnp.inf, lambda: jnp.log(jnp.sin(x)))
         return y
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def cdf(self, x):
         x_clamped = jnp.clip(x, 0.0, jnp.pi / 2)
         y = 1 + jnp.cos(x_clamped - jnp.pi)
         return jnp.clip(y, 0.0, 1)
 
-    @partial(jax.jit, static_argnums=(0,))
+##    @partial(jax.jit, static_argnums=(0,))
     def ppf(self, y):
         x = jnp.arccos(1 - y)
         return x
