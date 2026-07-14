@@ -13,10 +13,9 @@ from dynesty.utils import resample_equal
 from .relations import DERIVED, FUNDAMENTAL
 from .forward import evaluate_relations
 from .sampling import get_sampler_settings
-from .priors import (
-    TruncatedPowerLaw, ParallaxPrior, Normal, Uniform, Exponential,
-    TruncatedNormal,
-)
+from .priors import ParallaxPrior 
+ 
+from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
 from . import validation
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
@@ -33,7 +32,7 @@ from . import validation
 DEFAULT_PRIORS = {
     "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
     "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
-    "Teff": Uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
+    "Teff": uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
     "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
     "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
     "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
@@ -46,11 +45,11 @@ def _as_distribution(p):
     """Allow priors={'Teff': (mean, error)} as shorthand for a Gaussian --
     the same convention (mean, error) tuples have in `given`, for
     consistency. For a uniform prior specifically, pass
-    priors.Uniform(loc, scale) (or scipy.stats.uniform, or any other
+    priors.uniform(loc, scale) (or scipy.stats.uniform, or any other
     distribution) directly."""
     if isinstance(p, tuple):
         mean, err = p
-        return Normal(loc=mean, scale=err)
+        return normal(loc=mean, scale=err)
     return p
 
 
@@ -60,7 +59,7 @@ def _parse_given(given):
 
     Each given[name] can be:
       - a plain number -- treated as exactly known.
-      - a (mean, error) tuple -- wrapped as a Gaussian (priors.Normal).
+      - a (mean, error) tuple -- wrapped as a Gaussian (priors.normal).
       - any object with .logpdf and/or .ppf -- used directly, e.g. for
         asymmetric or otherwise non-Gaussian uncertainties.
     """
@@ -68,7 +67,7 @@ def _parse_given(given):
     for name, value in given.items():
         if isinstance(value, tuple):
             mean, err = value
-            constraints[name] = Normal(loc=mean, scale=err)
+            constraints[name] = normal(loc=mean, scale=err)
         elif hasattr(value, "logpdf") or hasattr(value, "ppf"):
             constraints[name] = value
         else:
@@ -240,7 +239,7 @@ class Solver:
             if name in FUNDAMENTAL:
                 continue
             eps = max(abs(target) * 1e-3, 1e-6)
-            likelihood_terms[name] = Normal(loc=target, scale=eps)
+            likelihood_terms[name] = normal(loc=target, scale=eps)
 
         free_fundamentals = [p for p in FUNDAMENTAL if p not in fixed_fund]
 
