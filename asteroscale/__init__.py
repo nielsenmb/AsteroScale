@@ -12,8 +12,8 @@ def solve(given, want, nlive=None, priors=None, seed=None, preset=None, **solve_
     """One-off convenience wrapper: solve(given, want) without instantiating
     Solver yourself. Reuses a shared default Solver unless nlive/priors/seed
     are given, in which case a fresh Solver is created with those settings.
-    Remaining kwargs (dlogz, print_progress, return_results) pass through
-    to Solver.solve().
+    Remaining kwargs (dlogz, print_progress, return_results, bandpass) pass
+    through to Solver.solve().
     """
     global _default_solver
     if nlive is not None or priors is not None or seed is not None or preset is not None:

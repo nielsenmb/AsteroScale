@@ -10,12 +10,12 @@ from scipy import optimize
 import dynesty
 from dynesty.utils import resample_equal
 
-from .relations import DERIVED, FUNDAMENTAL
-from .forward import evaluate_relations
+from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
+from .forward import evaluate_relations, required_fundamentals
 from .sampling import get_sampler_settings
-from .priors import DEFAULT_PRIORS 
+from .priors import ParallaxPrior 
  
-from .distributions import normal
+from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
 from . import validation
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
@@ -29,7 +29,16 @@ from . import validation
 # scipy.stats can't do this, but because its frozen-distribution objects
 # are much slower for the scalar, one-value-at-a-time .ppf/.logpdf calls
 # this solver actually makes -- see priors.py's module docstring.
-
+DEFAULT_PRIORS = {
+    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
+    "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
+    "Teff": uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
+    "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
+    "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
+    "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
+        loc=-0.1, scale=0.25, low=-1.0, high=0.5,  # truncated to the range the dnu
+    ),                                        # metallicity correction is calibrated over
+}
 
 
 def _as_distribution(p):
@@ -79,6 +88,9 @@ class Solver:
         Override the preset's number of live points.
     seed : int, optional
         Seed for the NumPy random generator.
+    bandpass : {'TESS', 'Kepler'}, default='TESS'
+        Photometric response used for ``A_env``. May be overridden by an
+        individual :meth:`solve` call.
     sample, bound : str, optional
         Dynesty sampling and bounding methods.
     bootstrap, walks, update_interval : int, optional
@@ -97,6 +109,7 @@ class Solver:
         bootstrap=None,
         walks=None,
         update_interval=None,
+        bandpass="TESS",
     ):
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
@@ -112,13 +125,16 @@ class Solver:
         self.nlive = self.settings.nlive
         self.sample = self.settings.sample
         self.bound = self.settings.bound
+        self.bandpass = normalize_bandpass(bandpass)
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
+        self._last_bandpass = None
         # used by predict() to derive further quantities without resampling
 
-    def _forward(self, fundamentals):
+    def _forward(self, fundamentals, bandpass=None):
         """Evaluate all relations for scalar or array fundamentals."""
-        return evaluate_relations(fundamentals)
+        bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
+        return evaluate_relations(fundamentals, bandpass=bandpass)
 
     def _bounds_for(self, name):
         """Best-effort bounds for a fundamental, from its prior's support --
@@ -134,7 +150,7 @@ class Solver:
             return (prior.low, prior.high)
         return (-np.inf, np.inf)
 
-    def _point_estimate(self, fixed, want):
+    def _point_estimate(self, fixed, want, bandpass):
         """Fast path: every given value was a plain scalar, so there's
         nothing to marginalize over. If the fixed values cover every
         fundamental, this is just a direct forward evaluation. Otherwise,
@@ -144,19 +160,21 @@ class Solver:
         """
         fixed_fund = {k: v for k, v in fixed.items() if k in FUNDAMENTAL}
         derived_targets = {k: v for k, v in fixed.items() if k in DERIVED}
-        free = [p for p in FUNDAMENTAL if p not in fixed_fund]
+        needed = required_fundamentals(list(want) + list(derived_targets))
+        free = [p for p in needed if p not in fixed_fund]
 
         if not free:
-            full = self._forward(fixed_fund)
+            full = self._forward(fixed_fund, bandpass=bandpass)
             self._last_fund = fixed_fund
+            self._last_bandpass = bandpass
             return {name: full[name] for name in want}
 
         if not derived_targets:
             raise ValueError(
                 f"Not enough information for a point estimate: {free} are "
                 "unconstrained and no derived-quantity targets were given. "
-                "Either fix all of M/R/Teff/plx/A_G/FeH, or give at least "
-                "as many derived-quantity targets as free parameters."
+                "Provide the missing quantities directly, or give enough "
+                "derived-quantity constraints to solve for them."
             )
 
         x0 = np.array([self.priors[p].ppf(0.5) for p in free])
@@ -166,18 +184,22 @@ class Solver:
         def residuals(x):
             theta = dict(zip(free, x))
             theta.update(fixed_fund)
-            full = self._forward(theta)
+            full = self._forward(theta, bandpass=bandpass)
             return [full[name] - target for name, target in derived_targets.items()]
 
         result = optimize.least_squares(residuals, x0, bounds=(lo, hi))
         validation.check_point_estimate_residuals(result, derived_targets)
         theta = dict(zip(free, result.x))
         theta.update(fixed_fund)
-        full = self._forward(theta)
+        full = self._forward(theta, bandpass=bandpass)
         self._last_fund = theta
+        self._last_bandpass = bandpass
         return {name: full[name] for name in want}
 
-    def solve(self, given, want, dlogz=None, print_progress=False, return_results=False):
+    def solve(
+        self, given, want, dlogz=None, print_progress=False,
+        return_results=False, bandpass=None,
+    ):
         """Infer requested quantities from exact or uncertain constraints.
 
         Parameters
@@ -194,6 +216,9 @@ class Solver:
             Display Dynesty progress.
         return_results : bool, default=False
             Include raw Dynesty results under ``'_results'``.
+        bandpass : {'TESS', 'Kepler'}, optional
+            Photometric response used for ``A_env``. Overrides the value
+            supplied to :class:`Solver` for this call.
 
         Returns
         -------
@@ -203,11 +228,12 @@ class Solver:
         validation.validate_given(given)
         want = validation.normalize_want(want)
         dlogz = self.settings.dlogz if dlogz is None else dlogz
+        bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
 
         fixed, constraints = _parse_given(given)
 
         if not constraints:
-            return self._point_estimate(fixed, want)
+            return self._point_estimate(fixed, want, bandpass)
 
         # Fundamentals given a distribution use it as their prior directly
         # (replacing the default), rather than sampling broadly and
@@ -232,14 +258,17 @@ class Solver:
             eps = max(abs(target) * 1e-3, 1e-6)
             likelihood_terms[name] = normal(loc=target, scale=eps)
 
-        free_fundamentals = [p for p in FUNDAMENTAL if p not in fixed_fund]
+        active_names = list(want) + list(given)
+        needed = required_fundamentals(active_names)
+        free_fundamentals = [p for p in needed if p not in fixed_fund]
 
         if not free_fundamentals:
             # Every fundamental was pinned exactly, even though some other
             # given value was probabilistic (e.g. a redundant/consistency
             # check) -- nothing left to sample.
-            full = self._forward(fixed_fund)
+            full = self._forward(fixed_fund, bandpass=bandpass)
             self._last_fund = fixed_fund
+            self._last_bandpass = bandpass
             return {name: full[name] for name in want}
 
         if not likelihood_terms:
@@ -256,8 +285,9 @@ class Solver:
             fund = {p: priors[p].ppf(u[:, j]) for j, p in enumerate(free_fundamentals)}
             for k, v in fixed_fund.items():
                 fund[k] = np.full(n, v)
-            full = self._forward(fund)
+            full = self._forward(fund, bandpass=bandpass)
             self._last_fund = fund
+            self._last_bandpass = bandpass
             out = {name: full[name] for name in want}
             if return_results:
                 out["_results"] = None
@@ -273,7 +303,7 @@ class Solver:
         def loglike(theta):
             fund = dict(zip(free_fundamentals, theta))
             fund.update(fixed_fund)
-            full = self._forward(fund)
+            full = self._forward(fund, bandpass=bandpass)
             return float(sum(dist_obj.logpdf(full[name])
                               for name, dist_obj in likelihood_terms.items()))
 
@@ -292,15 +322,16 @@ class Solver:
         fund = {p: eq_samples[:, i] for i, p in enumerate(free_fundamentals)}
         for k, v in fixed_fund.items():
             fund[k] = np.full(eq_samples.shape[0], v)
-        full = self._forward(fund)
+        full = self._forward(fund, bandpass=bandpass)
         self._last_fund = fund
+        self._last_bandpass = bandpass
 
         out = {name: full[name] for name in want}
         if return_results:
             out["_results"] = results
         return out
 
-    def predict(self, want):
+    def predict(self, want, bandpass=None):
         """Compute additional quantities from the posterior/point estimate
         of the last solve() call, without re-running the sampler -- e.g.
 
@@ -318,5 +349,15 @@ class Solver:
                 "quantities from -- call solve() first."
             )
         want = validation.normalize_want(want)
-        full = self._forward(self._last_fund)
+        bandpass = self._last_bandpass if bandpass is None else normalize_bandpass(bandpass)
+        missing = [
+            name for name in required_fundamentals(want)
+            if name not in self._last_fund
+        ]
+        if missing:
+            raise ValueError(
+                f"Cannot predict {want} from the previous solve: required "
+                f"fundamentals {missing} were not part of that problem."
+            )
+        full = self._forward(self._last_fund, bandpass=bandpass)
         return {name: full[name] for name in want}

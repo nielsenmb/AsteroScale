@@ -15,9 +15,18 @@ def test_ball_amplitude_and_fwhm_numerically():
     beta_sun = 1.0 - np.exp((rel.TEFF_SUN - 8907.0) / 1250.0)
     expected_amplitude = 2.1 * beta_sun * (rel.TEFF_SUN / 5777.0) ** -2
     assert rel.envelope_amplitude(1.0, 1.0, rel.TEFF_SUN) == pytest.approx(expected_amplitude)
+    expected_kepler = 2.5 * beta_sun * (rel.TEFF_SUN / 5777.0) ** -2
+    assert rel.envelope_amplitude(
+        1.0, 1.0, rel.TEFF_SUN, bandpass="Kepler"
+    ) == pytest.approx(expected_kepler)
     assert rel.envelope_fwhm(1000.0, 5000.0) == pytest.approx(0.66 * 1000.0**0.88)
     hot = 0.66 * 1000.0**0.88 * (1.0 + 6e-4 * (6272.0 - rel.TEFF_SUN))
     assert rel.envelope_fwhm(1000.0, 6272.0) == pytest.approx(hot)
+
+
+def test_unknown_amplitude_bandpass_is_rejected():
+    with pytest.raises(ValueError, match="TESS.*Kepler"):
+        rel.envelope_amplitude(1.0, 1.0, rel.TEFF_SUN, bandpass="Gaia")
 
 
 def test_kallinger_background_scalings():

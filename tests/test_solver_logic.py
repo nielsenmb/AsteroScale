@@ -28,6 +28,23 @@ def test_exact_forward_solve_returns_all_values():
     assert result["dnu"] == pytest.approx(135.1)
 
 
+def test_exact_seismic_prediction_does_not_require_gaia_parameters():
+    result = Solver().solve(
+        {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},
+        want=["numax", "dnu", "A_env"],
+    )
+    assert result["numax"] == pytest.approx(3090.0)
+    assert result["dnu"] == pytest.approx(135.1)
+
+
+def test_solver_and_per_call_bandpass_control_envelope_amplitude():
+    star = {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0}
+    solver = Solver(bandpass="Kepler")
+    kepler = solver.solve(star, want=["A_env"])["A_env"]
+    tess = solver.solve(star, want=["A_env"], bandpass="tess")["A_env"]
+    assert kepler / tess == pytest.approx(2.5 / 2.1)
+
+
 def test_predict_requires_a_previous_solve():
     with pytest.raises(RuntimeError, match="previous solve"):
         Solver().predict(["L"])
@@ -36,8 +53,7 @@ def test_predict_requires_a_previous_solve():
 def test_point_estimate_recovers_mass_and_radius():
     solver = Solver()
     result = solver.solve(
-        {"Teff": 5772.0, "FeH": 0.0, "plx": 100.0, "A_G": 0.0,
-         "numax": 3090.0, "dnu": 135.1},
+        {"Teff": 5772.0, "FeH": 0.0, "numax": 3090.0, "dnu": 135.1},
         want=["M", "R"],
     )
     assert result["M"] == pytest.approx(1.0, rel=1e-5)

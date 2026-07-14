@@ -134,15 +134,47 @@ def envelope_fwhm(numax, Teff):
     return base * correction
 
 
-A_ENV_SUN = 2.1  # ppm, maximum radial-mode rms amplitude in the TESS band
+A_ENV_SUN = 2.1  # ppm, maximum radial-mode rms amplitude in TESS
+A_ENV_SUN_KEPLER = 2.5  # ppm, Kepler calibration before TESS response correction
+_A_ENV_SUN = {"TESS": A_ENV_SUN, "KEPLER": A_ENV_SUN_KEPLER}
 
 
-def envelope_amplitude(M, L, Teff):
-    """Return the maximum radial-mode rms amplitude in the TESS band.
+def normalize_bandpass(bandpass):
+    """Return the canonical name of a supported photometric bandpass.
+
+    Parameters
+    ----------
+    bandpass : str
+        ``'TESS'`` or ``'Kepler'`` (case-insensitive).
+
+    Returns
+    -------
+    str
+        Canonical upper-case bandpass name.
+
+    Raises
+    ------
+    ValueError
+        If the bandpass is not supported.
+    """
+    if not isinstance(bandpass, str):
+        raise ValueError("bandpass must be 'TESS' or 'Kepler'.")
+    canonical = bandpass.strip().upper()
+    if canonical not in _A_ENV_SUN:
+        raise ValueError(
+            f"Unsupported bandpass {bandpass!r}; choose 'TESS' or 'Kepler'."
+        )
+    return canonical
+
+
+def envelope_amplitude(M, L, Teff, bandpass="TESS"):
+    """Return the maximum radial-mode rms amplitude in a photometric band.
 
     Implements equations 16--18 of Ball et al. (2018), including the
     suppression factor near the red edge of the delta-Scuti instability
-    strip.
+    strip. The 2.1 ppm TESS zero-point is from Ball et al.; the 2.5 ppm
+    Kepler zero-point underlying the TESS response correction is given by
+    Campante et al. (2016).
 
     Parameters
     ----------
@@ -150,15 +182,19 @@ def envelope_amplitude(M, L, Teff):
         Mass and luminosity in solar units.
     Teff : float or array-like
         Effective temperature in kelvin.
+    bandpass : {'TESS', 'Kepler'}, default='TESS'
+        Photometric response used for the amplitude calibration. Kepler
+        amplitudes are slightly larger because its response is bluer.
 
     Returns
     -------
     float or ndarray
-        Maximum rms amplitude in parts per million.
+        Maximum radial-mode rms amplitude in parts per million.
     """
+    bandpass = normalize_bandpass(bandpass)
     red_edge = 8907.0 * L**-0.093
     beta = 1.0 - xp.exp((Teff - red_edge) / 1250.0)
-    return A_ENV_SUN * beta * (L / M) * (Teff / 5777.0) ** -2.0
+    return _A_ENV_SUN[bandpass] * beta * (L / M) * (Teff / 5777.0) ** -2.0
 
 
 def granulation_amplitude(numax, M):
