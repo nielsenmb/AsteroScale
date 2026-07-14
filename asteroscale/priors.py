@@ -17,7 +17,7 @@ workload.
 """
 import numpy as np
 import scipy.special as sp
-
+from .distributions import uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
  
 class ParallaxPrior:
     """Bailer-Jones (2015) exponentially-decreasing space density prior,
@@ -45,3 +45,14 @@ class ParallaxPrior:
         u = np.asarray(u)
         r_pc = self.length_scale_pc * sp.gammaincinv(3.0, 1.0 - u)
         return 1000.0 / r_pc
+
+DEFAULT_PRIORS = {
+    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
+    "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
+    "Teff": uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
+    "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
+    "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
+    "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
+        loc=-0.1, scale=0.25, low=-1.0, high=0.5,  # truncated to the range the dnu
+    ),                                        # metallicity correction is calibrated over
+}

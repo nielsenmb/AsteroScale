@@ -13,9 +13,9 @@ from dynesty.utils import resample_equal
 from .relations import DERIVED, FUNDAMENTAL
 from .forward import evaluate_relations
 from .sampling import get_sampler_settings
-from .priors import ParallaxPrior 
+from .priors import DEFAULT_PRIORS 
  
-from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
+from .distributions import normal
 from . import validation
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
@@ -29,16 +29,7 @@ from . import validation
 # scipy.stats can't do this, but because its frozen-distribution objects
 # are much slower for the scalar, one-value-at-a-time .ppf/.logpdf calls
 # this solver actually makes -- see priors.py's module docstring.
-DEFAULT_PRIORS = {
-    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
-    "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
-    "Teff": uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
-    "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
-    "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
-    "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
-        loc=-0.1, scale=0.25, low=-1.0, high=0.5,  # truncated to the range the dnu
-    ),                                        # metallicity correction is calibrated over
-}
+
 
 
 def _as_distribution(p):
