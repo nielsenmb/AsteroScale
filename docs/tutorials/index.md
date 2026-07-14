@@ -1,23 +1,28 @@
 # Tutorials
 
-The current worked example notebook covers:
+The tutorials are organised around common questions:
 
-- forward prediction of oscillation and granulation properties;
-- inference of mass, radius and other stellar properties;
-- Gaia parallax, photometry and extinction constraints;
-- exact, Gaussian and non-Gaussian inputs;
-- sampler presets and batch processing; and
-- real stars with literature values for comparison.
+- {doc}`predicting-oscillations`: where should oscillations and granulation
+  appear, and how large might they be?
+- {doc}`inferring-stellar-properties`: what do measured oscillations imply
+  for mass, radius, density and surface gravity?
+- {doc}`gaia-constraints`: how can Gaia astrometry and photometry constrain
+  the result?
+- {doc}`real-star-comparisons`: how closely do scaling-relation results agree
+  with published values?
 
-{download}`Download the complete example notebook <../../example.ipynb>`.
+```{toctree}
+:maxdepth: 1
+:hidden:
 
-The notebook will be separated into shorter, question-oriented tutorials as
-the documentation develops:
+predicting-oscillations
+inferring-stellar-properties
+gaia-constraints
+real-star-comparisons
+```
 
-1. **Where should I look for oscillations?**
-2. **What do measured oscillations tell me about the star?**
-3. **How can Gaia constrain the result?**
-4. **How do AsteroScale results compare with real stars?**
+The original combined notebook remains available for now:
+{download}`download the complete example notebook <../../example.ipynb>`.
 
 Notebook execution is intentionally disabled during hosted documentation
 builds because nested-sampling examples are comparatively expensive. Tested
