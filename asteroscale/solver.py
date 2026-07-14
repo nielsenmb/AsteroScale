@@ -11,6 +11,8 @@ import dynesty
 from dynesty.utils import resample_equal
 
 from .relations import DERIVED, FUNDAMENTAL
+from .forward import evaluate_relations
+from .sampling import get_sampler_settings
 from .priors import (
     TruncatedPowerLaw, ParallaxPrior, Normal, Uniform, Exponential,
     TruncatedNormal,
@@ -75,29 +77,58 @@ def _parse_given(given):
 
 
 class Solver:
-    def __init__(self, priors=None, nlive=500, seed=None, sample="auto", bound="multi"):
-        """
-        sample, bound: passed straight through to dynesty.NestedSampler --
-        e.g. sample="rwalk" instead of the default "auto" heuristic, which
-        can help for narrower/more correlated posteriors (many simultaneous
-        tight constraints) where "auto"'s pick doesn't mix well. See
-        dynesty's docs for the full set of options.
-        """
+    """Infer stellar properties from a flexible set of constraints.
+
+    Parameters
+    ----------
+    priors : dict, optional
+        Distributions replacing entries in :data:`DEFAULT_PRIORS`.
+    preset : {'standard', 'fast', 'precise'}, default='standard'
+        Named Dynesty accuracy/runtime configuration.
+    nlive : int, optional
+        Override the preset's number of live points.
+    seed : int, optional
+        Seed for the NumPy random generator.
+    sample, bound : str, optional
+        Dynesty sampling and bounding methods.
+    bootstrap, walks, update_interval : int, optional
+        Additional Dynesty settings. The standard defaults are zero, five,
+        and ``10 * nlive``, respectively.
+    """
+
+    def __init__(
+        self,
+        priors=None,
+        preset="standard",
+        nlive=None,
+        seed=None,
+        sample=None,
+        bound=None,
+        bootstrap=None,
+        walks=None,
+        update_interval=None,
+    ):
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
-        self.nlive = nlive
-        self.sample = sample
-        self.bound = bound
+        self.settings = get_sampler_settings(
+            preset,
+            nlive=nlive,
+            sample=sample,
+            bound=bound,
+            bootstrap=bootstrap,
+            walks=walks,
+            update_interval=update_interval,
+        )
+        self.nlive = self.settings.nlive
+        self.sample = self.settings.sample
+        self.bound = self.settings.bound
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
         # used by predict() to derive further quantities without resampling
 
     def _forward(self, fundamentals):
-        """fundamentals: dict {name: value or array}. Returns dict incl. derived."""
-        out = dict(fundamentals)
-        for name, (func, args) in DERIVED.items():
-            out[name] = func(*[out[a] for a in args])
-        return out
+        """Evaluate all relations for scalar or array fundamentals."""
+        return evaluate_relations(fundamentals)
 
     def _bounds_for(self, name):
         """Best-effort bounds for a fundamental, from its prior's support --
@@ -156,19 +187,32 @@ class Solver:
         self._last_fund = theta
         return {name: full[name] for name in want}
 
-    def solve(self, given, want, dlogz=0.5, print_progress=False, return_results=False):
-        """
-        given: dict {name: value}, where value is a plain number (exact),
-               a (mean, error) tuple (Gaussian), or any object with .logpdf
-               and/or .ppf (custom distribution). See _parse_given.
-        want:  list of quantity names to return.
+    def solve(self, given, want, dlogz=None, print_progress=False, return_results=False):
+        """Infer requested quantities from exact or uncertain constraints.
 
-        If every given value is a plain scalar, this returns a single fast
-        point estimate (see _point_estimate) instead of a full posterior --
-        no sampler runs at all in that case.
+        Parameters
+        ----------
+        given : dict
+            Values may be exact numbers, ``(mean, error)`` Gaussian pairs,
+            or distribution-like objects with ``logpdf`` or ``ppf``.
+        want : list of str or {'all'}
+            Quantities to return. ``'all'`` returns every available
+            fundamental and derived quantity.
+        dlogz : float, optional
+            Override the preset's evidence stopping tolerance.
+        print_progress : bool, default=False
+            Display Dynesty progress.
+        return_results : bool, default=False
+            Include raw Dynesty results under ``'_results'``.
+
+        Returns
+        -------
+        dict
+            Requested point estimates or posterior arrays.
         """
         validation.validate_given(given)
-        validation.validate_want(want)
+        want = validation.normalize_want(want)
+        dlogz = self.settings.dlogz if dlogz is None else dlogz
 
         fixed, constraints = _parse_given(given)
 
@@ -246,6 +290,8 @@ class Solver:
         sampler = dynesty.NestedSampler(
             loglike, prior_transform, ndim, nlive=self.nlive, rstate=self.rng,
             sample=self.sample, bound=self.bound,
+            bootstrap=self.settings.bootstrap, walks=self.settings.walks,
+            update_interval=self.settings.update_interval,
         )
         sampler.run_nested(dlogz=dlogz, print_progress=print_progress, save_bounds=False)
         results = sampler.results
@@ -281,6 +327,6 @@ class Solver:
                 "predict() needs a previous solve() call to derive "
                 "quantities from -- call solve() first."
             )
-        validation.validate_names(want, "want")
+        want = validation.normalize_want(want)
         full = self._forward(self._last_fund)
         return {name: full[name] for name in want}

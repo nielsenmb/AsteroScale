@@ -6,7 +6,7 @@ import numpy as np
 
 # Array backend, swappable for a jax.jit-able forward pass:
 #   import jax.numpy as jnp
-#   from astero_solver import relations
+#   from asteroscale import relations
 #   relations.xp = jnp
 # Every function below resolves xp.* at call time (not at import time), so
 # flipping this one line is enough to make the whole forward pass
@@ -110,35 +110,106 @@ def mean_density(M, R):
     return M / R**3
 
 
-def envelope_fwhm(numax):
-    """FWHM of the Gaussian oscillation power envelope, muHz.
+def envelope_fwhm(numax, Teff):
+    """Return the FWHM of the oscillation power envelope.
 
-    Mosser et al. 2012 (A&A 537, A30), delta_nu_env = 0.66 * numax^0.88.
-    Calibrated on Kepler red giants -- extrapolating to main-sequence/
-    subgiant stars is less certain; at least one study (Lund et al. 2017 on
-    dwarfs) finds the oscillation and granulation timescales decouple in a
-    way this single power law doesn't capture there.
+    This is equation 19 of Ball et al. (2018): the Mosser et al. (2012)
+    relation with their stated temperature correction above solar
+    effective temperature.
+
+    Parameters
+    ----------
+    numax : float or array-like
+        Frequency of maximum oscillation power in microhertz.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Full width at half maximum in microhertz.
     """
-    return 0.66 * numax**0.88
+    base = 0.66 * numax**0.88
+    correction = xp.where(Teff > TEFF_SUN, 1.0 + 6.0e-4 * (Teff - TEFF_SUN), 1.0)
+    return base * correction
 
 
-A_ENV_SUN = 3.6  # ppm, bolometric envelope amplitude (Huber et al. 2011; still
-# the reference value used e.g. in the pySYD pipeline)
+A_ENV_SUN = 2.1  # ppm, maximum radial-mode rms amplitude in the TESS band
 
 
 def envelope_amplitude(M, L, Teff):
-    """Peak bolometric oscillation amplitude, ppm.
+    """Return the maximum radial-mode rms amplitude in the TESS band.
 
-    Kjeldsen & Bedding 1995 (A&A 293, 87) "L/M" relation: amplitude scales
-    with L/M and a Teff power law. r=2 is their empirical fit to
-    observations; r=1.5 is the theoretical adiabatic value some authors use
-    instead (e.g. Michel et al. 2008; Mosser et al. 2010). This is the
-    bolometric amplitude -- converting to a specific photometric passband
-    needs an additional bolometric correction factor c_K(Teff)
-    (Ballot et al. 2011), not included here.
+    Implements equations 16--18 of Ball et al. (2018), including the
+    suppression factor near the red edge of the delta-Scuti instability
+    strip.
+
+    Parameters
+    ----------
+    M, L : float or array-like
+        Mass and luminosity in solar units.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Maximum rms amplitude in parts per million.
     """
-    r = 2.0
-    return A_ENV_SUN * (L / M) / (Teff / TEFF_SUN) ** r
+    red_edge = 8907.0 * L**-0.093
+    beta = 1.0 - xp.exp((Teff - red_edge) / 1250.0)
+    return A_ENV_SUN * beta * (L / M) * (Teff / 5777.0) ** -2.0
+
+
+def granulation_amplitude(numax, M):
+    """Return the Kallinger et al. (2014) granulation rms amplitude.
+
+    Parameters
+    ----------
+    numax : float or array-like
+        Frequency of maximum oscillation power in microhertz.
+    M : float or array-like
+        Mass in solar units.
+
+    Returns
+    -------
+    float or ndarray
+        RMS granulation amplitude in parts per million.
+    """
+    return 3710.0 * numax**-0.613 * M**-0.26
+
+
+def granulation_frequency_low(numax):
+    """Return the lower Kallinger characteristic frequency in microhertz."""
+    return 0.317 * numax**0.970
+
+
+def granulation_frequency_high(numax):
+    """Return the higher Kallinger characteristic frequency in microhertz."""
+    return 0.948 * numax**0.992
+
+
+def harvey_super_lorentzian(frequency, amplitude, characteristic_frequency):
+    """Evaluate a normalized Kallinger super-Lorentzian component.
+
+    Parameters
+    ----------
+    frequency : float or array-like
+        Frequencies in microhertz.
+    amplitude : float
+        RMS intensity amplitude in parts per million.
+    characteristic_frequency : float
+        Characteristic frequency in microhertz.
+
+    Returns
+    -------
+    float or ndarray
+        Power density in ppm squared per microhertz. Its integral from zero
+        to infinity equals ``amplitude**2``.
+    """
+    normalization = 2.0 * xp.sqrt(2.0) / xp.pi
+    ratio = frequency / characteristic_frequency
+    return normalization * amplitude**2 / characteristic_frequency / (1.0 + ratio**4)
 
 
 def distance(plx):
@@ -226,8 +297,11 @@ DERIVED = {
     "L": (luminosity, ("R", "Teff")),
     "logg": (logg, ("M", "R")),
     "rho": (mean_density, ("M", "R")),
-    "FWHM_env": (envelope_fwhm, ("numax",)),
+    "FWHM_env": (envelope_fwhm, ("numax", "Teff")),
     "A_env": (envelope_amplitude, ("M", "L", "Teff")),
+    "A_gran": (granulation_amplitude, ("numax", "M")),
+    "b_gran_low": (granulation_frequency_low, ("numax",)),
+    "b_gran_high": (granulation_frequency_high, ("numax",)),
     "d": (distance, ("plx",)),
     "Mbol": (mbol, ("L",)),
     "BC_G": (bc_g, ("Teff",)),

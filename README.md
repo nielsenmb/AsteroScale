@@ -1,4 +1,4 @@
-# astero_solver
+# AsteroScale
 
 A back-of-envelope calculator for asteroseismic scaling relations. Give it
 any subset of a star's observed parameters (with uncertainties), and it
@@ -6,7 +6,7 @@ returns any other parameter(s) you ask for -- marginalizing over whatever
 wasn't given, using nested sampling.
 
 ```python
-import astero_solver as ast
+import asteroscale as ast
 
 given = {
     "Teff": (5777, 50),
@@ -30,7 +30,7 @@ R                1.003     0.017       0.986       1.003       1.020
 pip install -e .
 ```
 
-Requires `numpy`, `dynesty`, `matplotlib`.
+Requires `numpy`, `scipy`, `dynesty`, and `matplotlib`.
 
 ## How it works
 
@@ -73,12 +73,11 @@ method (a frozen `scipy.stats` distribution, one of the classes in
 `priors.py`, or your own) directly for something else -- including
 `scipy.stats.uniform(loc, scale)` if you specifically want uniform.
 
-`Solver(..., sample="auto", bound="multi")` are passed straight through to
-`dynesty.NestedSampler`. The default `sample="auto"` heuristic doesn't
-always pick well for narrow or strongly correlated posteriors (e.g. many
-simultaneous tight constraints); `sample="rwalk"` or `"rslice"` can help,
-and dynesty's own runtime warnings will suggest this when it detects the
-problem itself. See dynesty's docs for the full set of options.
+The default Dynesty configuration is `sample="rwalk"`, `bound="single"`,
+`bootstrap=0`, `walks=5`, and `update_interval=10*nlive`. Named
+`preset="fast"` and `preset="precise"` configurations provide convenient
+rough and publication-quality starting points. Every setting can still be
+overridden explicitly.
 
 ## Derived quantities
 
@@ -89,8 +88,10 @@ problem itself. See dynesty's docs for the full set of options.
 | `L` | luminosity | Stefan-Boltzmann |
 | `logg` | surface gravity | classic scaling |
 | `rho` | mean density | M/R^3 |
-| `FWHM_env` | FWHM of the p-mode power excess envelope | Mosser et al. 2012a: 0.66 * numax^0.88 |
-| `A_env` | peak bolometric oscillation amplitude (ppm) | Kjeldsen & Bedding 1995 L/M scaling, normalized to A_env,sun = 3.6 ppm (Huber et al. 2011) |
+| `FWHM_env` | FWHM of the p-mode power excess envelope | Ball et al. 2018 eq. 19, including its hot-star correction |
+| `A_env` | maximum radial-mode rms amplitude in the TESS band (ppm) | Ball et al. 2018 eqs. 16--18, including hot-edge suppression |
+| `A_gran` | granulation rms amplitude (ppm) | Kallinger et al. 2014 |
+| `b_gran_low`, `b_gran_high` | characteristic frequencies of the two super-Lorentzian background components (microHz) | Kallinger et al. 2014 |
 | `d` | distance | 1000/plx |
 | `Mbol` | absolute bolometric magnitude | from L |
 | `BC_G`, `BC_BP`, `BC_RP` | bolometric corrections, Gaia G/BP/RP | linear placeholders near solar Teff -- see caveat below |
@@ -104,13 +105,14 @@ citations.
 
 ## API
 
-- `astero_solver.solve(given, want, **kwargs)` -- one-off convenience
+- `asteroscale.solve(given, want, **kwargs)` -- one-off convenience
   wrapper. Reuses a shared default `Solver` unless `nlive`/`priors`/`seed`
   are passed, in which case a fresh one is created.
-- `astero_solver.Solver(priors=None, nlive=500, seed=None, sample="auto", bound="multi")`
+- `asteroscale.Solver(priors=None, preset="standard", seed=None, **sampler_overrides)`
   -- for reuse across multiple calls, custom priors, or sampler tuning.
-  - `.solve(given, want, dlogz=0.5, print_progress=False, return_results=False)`
-    -- `want` is a list of names. Each value in `given` can be:
+  - `.solve(given, want, dlogz=None, print_progress=False, return_results=False)`
+    -- `want` is a list of names, or `"all"` for every available quantity.
+    Each value in `given` can be:
     - **a plain number** -- treated as exactly known. If *every* given
       value is like this, `solve()` skips the sampler entirely and returns
       a fast point estimate (a single `scipy.optimize.least_squares` call
@@ -155,13 +157,13 @@ citations.
     Works for both the nested-sampling path (returns arrays over the same
     posterior) and the point-estimate path (returns floats). Raises if
     called before any `solve()`.
-- `astero_solver.summarize(samples, params=None)` -- prints mean/std and
+- `asteroscale.summarize(samples, params=None)` -- prints mean/std and
   16/50/84th percentiles for each quantity.
-- `astero_solver.plot_posterior(samples, params=None)` -- quick pairwise
+- `asteroscale.plot_posterior(samples, params=None)` -- quick pairwise
   scatter/histogram grid for a fast visual sanity check on degeneracies.
-- `astero_solver.relations` -- the scaling relations module, if you want to
+- `asteroscale.relations` -- the scaling relations module, if you want to
   call individual functions directly (e.g. `relations.f_numax(-1.5)`).
-- `astero_solver.solve_many(targets, want, priors=None, nlive=500, sample="auto", bound="multi", n_jobs=None, base_seed=0, show_progress=False)`
+- `asteroscale.solve_many(targets, want, priors=None, preset="standard", n_jobs=None, base_seed=0, show_progress=False)`
   -- solve many independent targets in parallel (one process per target, up
   to `n_jobs` at a time). `targets` is `{target_id: given_dict}`; `want` is
   either one list applied to every target or `{target_id: want_list}` for

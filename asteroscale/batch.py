@@ -46,9 +46,13 @@ def solve_many(
     targets,
     want,
     priors=None,
-    nlive=500,
-    sample="auto",
-    bound="multi",
+    preset="standard",
+    nlive=None,
+    sample=None,
+    bound=None,
+    bootstrap=None,
+    walks=None,
+    update_interval=None,
     n_jobs=None,
     base_seed=0,
     show_progress=False,
@@ -61,7 +65,7 @@ def solve_many(
          "KIC 87654321": {...}}
     want: list of quantity names applied to every target, or a dict
         {target_id: want_list} for per-target requests.
-    priors, nlive, sample, bound: shared Solver settings used for every
+    priors, preset, nlive, sample, bound: shared Solver settings used for every
         target -- a fresh Solver is built in each worker process, nothing
         is shared/reused across targets. Custom priors must be picklable
         (frozen scipy.stats distributions and the classes in priors.py
@@ -76,7 +80,16 @@ def solve_many(
     aborting the whole batch -- check for that key rather than assuming
     every requested quantity is present for every target.
     """
-    solver_kwargs = dict(priors=priors, nlive=nlive, sample=sample, bound=bound)
+    solver_kwargs = dict(
+        priors=priors,
+        preset=preset,
+        nlive=nlive,
+        sample=sample,
+        bound=bound,
+        bootstrap=bootstrap,
+        walks=walks,
+        update_interval=update_interval,
+    )
     items = list(targets.items())
     want_for = want if isinstance(want, dict) else {tid: want for tid, _ in items}
 

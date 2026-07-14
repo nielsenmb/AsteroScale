@@ -43,10 +43,35 @@ def validate_names(names, kind):
         )
 
 
-def validate_want(want):
+def normalize_want(want):
+    """Validate and expand a requested output list.
+
+    Parameters
+    ----------
+    want : str or sequence of str
+        Requested quantity names. ``'all'`` and ``['all']`` expand to every
+        fundamental and derived quantity.
+
+    Returns
+    -------
+    list of str
+        Validated, expanded quantity names.
+    """
+    if want == "all" or want == ["all"] or want == ("all",):
+        return list(FUNDAMENTAL) + list(DERIVED)
+    if isinstance(want, str):
+        want = [want]
     if not want:
-        raise ValueError("want must be a non-empty list of quantity names.")
+        raise ValueError("want must contain at least one quantity name.")
+    if "all" in want:
+        raise ValueError("'all' cannot be combined with individual quantity names.")
     validate_names(want, "want")
+    return list(want)
+
+
+def validate_want(want):
+    """Validate requested outputs without returning the normalized list."""
+    normalize_want(want)
 
 
 def validate_given(given):
