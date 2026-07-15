@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 
 from asteroscale import Solver
+from asteroscale.distributions import normal
+from asteroscale.solver import _partition_constraints
 from asteroscale.relations import DERIVED, FUNDAMENTAL
 from asteroscale.validation import normalize_want
 
@@ -66,3 +68,39 @@ def test_prior_predictive_is_reproducible():
     first = Solver(seed=12, nlive=10).solve(given, ["L"])["L"]
     second = Solver(seed=12, nlive=10).solve(given, ["L"])["L"]
     np.testing.assert_array_equal(first, second)
+
+
+def test_propagate_mode_replaces_fundamental_prior():
+    population_prior = normal(loc=0.8, scale=0.1)
+    measurement = normal(loc=1.2, scale=0.05)
+    priors, likelihood = _partition_constraints(
+        {"M": population_prior}, {"M": measurement}, "propagate"
+    )
+    assert priors["M"] is measurement
+    assert likelihood == {}
+
+
+def test_likelihood_mode_retains_prior_and_conditions_on_measurement():
+    population_prior = normal(loc=0.8, scale=0.1)
+    measurement = normal(loc=1.2, scale=0.05)
+    priors, likelihood = _partition_constraints(
+        {"M": population_prior}, {"M": measurement}, "likelihood"
+    )
+    assert priors["M"] is population_prior
+    assert likelihood["M"] is measurement
+
+
+def test_input_mode_can_be_set_on_solver_or_overridden_per_call():
+    solver = Solver(input_mode="likelihood")
+    assert solver.input_mode == "likelihood"
+    with pytest.raises(ValueError, match="Unknown input_mode"):
+        solver.solve({"M": (1.0, 0.1)}, ["M"], input_mode="invalid")
+
+
+def test_likelihood_mode_requires_logpdf():
+    class QuantileOnly:
+        def ppf(self, u):
+            return u
+
+    with pytest.raises(TypeError, match=r"needs a logpdf\(\) method"):
+        Solver(input_mode="likelihood").solve({"M": QuantileOnly()}, ["M"])

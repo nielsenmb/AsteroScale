@@ -53,6 +53,7 @@ def solve_many(
     bootstrap=None,
     walks=None,
     update_interval=None,
+    input_mode="propagate",
     n_jobs=None,
     base_seed=0,
     show_progress=False,
@@ -65,7 +66,7 @@ def solve_many(
          "KIC 87654321": {...}}
     want: list of quantity names applied to every target, or a dict
         {target_id: want_list} for per-target requests.
-    priors, preset, nlive, sample, bound: shared Solver settings used for every
+    priors, preset, nlive, sample, bound, input_mode: shared Solver settings used for every
         target -- a fresh Solver is built in each worker process, nothing
         is shared/reused across targets. Custom priors must be picklable
         (frozen scipy.stats distributions and the classes in priors.py
@@ -89,6 +90,7 @@ def solve_many(
         bootstrap=bootstrap,
         walks=walks,
         update_interval=update_interval,
+        input_mode=input_mode,
     )
     items = list(targets.items())
     want_for = want if isinstance(want, dict) else {tid: want for tid, _ in items}

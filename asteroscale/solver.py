@@ -40,6 +40,8 @@ DEFAULT_PRIORS = {
     ),                                        # metallicity correction is calibrated over
 }
 
+INPUT_MODES = ("propagate", "likelihood")
+
 
 def _as_distribution(p):
     """Allow priors={'Teff': (mean, error)} as shorthand for a Gaussian --
@@ -75,6 +77,48 @@ def _parse_given(given):
     return fixed, constraints
 
 
+def _normalize_input_mode(input_mode):
+    """Validate and normalize the interpretation of uncertain inputs."""
+    if not isinstance(input_mode, str):
+        raise ValueError(
+            f"input_mode must be one of {INPUT_MODES}, got {input_mode!r}."
+        )
+    normalized = input_mode.lower()
+    if normalized not in INPUT_MODES:
+        raise ValueError(
+            f"Unknown input_mode {input_mode!r}; choose from {INPUT_MODES}."
+        )
+    return normalized
+
+
+def _partition_constraints(base_priors, constraints, input_mode):
+    """Return effective priors and likelihood terms for an input mode.
+
+    In ``propagate`` mode, uncertain fundamental parameters replace their
+    corresponding population priors. In ``likelihood`` mode, every uncertain
+    input is treated as a measurement distribution and the population priors
+    remain in force.
+    """
+    priors = dict(base_priors)
+    likelihood_terms = {}
+    for name, dist_obj in constraints.items():
+        if (
+            input_mode == "propagate"
+            and name in FUNDAMENTAL
+            and hasattr(dist_obj, "ppf")
+        ):
+            priors[name] = dist_obj
+        else:
+            if not hasattr(dist_obj, "logpdf"):
+                raise TypeError(
+                    f"The uncertain input given[{name!r}] needs a logpdf() "
+                    f"method when used as a likelihood term in "
+                    f"input_mode={input_mode!r}."
+                )
+            likelihood_terms[name] = dist_obj
+    return priors, likelihood_terms
+
+
 class Solver:
     """Infer stellar properties from a flexible set of constraints.
 
@@ -91,6 +135,12 @@ class Solver:
     bandpass : {'TESS', 'Kepler'}, default='TESS'
         Photometric response used for ``A_env``. May be overridden by an
         individual :meth:`solve` call.
+    input_mode : {'propagate', 'likelihood'}, default='propagate'
+        Interpretation of uncertain fundamental inputs. ``'propagate'``
+        treats them as the current distributions to propagate, replacing the
+        corresponding population priors. ``'likelihood'`` treats them as
+        measurement likelihoods and retains the population priors. This is
+        independent of the Dynesty accuracy ``preset``.
     sample, bound : str, optional
         Dynesty sampling and bounding methods.
     bootstrap, walks, update_interval : int, optional
@@ -110,6 +160,7 @@ class Solver:
         walks=None,
         update_interval=None,
         bandpass="TESS",
+        input_mode="propagate",
     ):
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
@@ -126,6 +177,7 @@ class Solver:
         self.sample = self.settings.sample
         self.bound = self.settings.bound
         self.bandpass = normalize_bandpass(bandpass)
+        self.input_mode = _normalize_input_mode(input_mode)
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
         self._last_bandpass = None
@@ -198,7 +250,7 @@ class Solver:
 
     def solve(
         self, given, want, dlogz=None, print_progress=False,
-        return_results=False, bandpass=None,
+        return_results=False, bandpass=None, input_mode=None,
     ):
         """Infer requested quantities from exact or uncertain constraints.
 
@@ -219,6 +271,9 @@ class Solver:
         bandpass : {'TESS', 'Kepler'}, optional
             Photometric response used for ``A_env``. Overrides the value
             supplied to :class:`Solver` for this call.
+        input_mode : {'propagate', 'likelihood'}, optional
+            Override how uncertain fundamental inputs are interpreted. See
+            :class:`Solver`. Exact scalar inputs are fixed in either mode.
 
         Returns
         -------
@@ -229,27 +284,20 @@ class Solver:
         want = validation.normalize_want(want)
         dlogz = self.settings.dlogz if dlogz is None else dlogz
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
+        input_mode = self.input_mode if input_mode is None else _normalize_input_mode(input_mode)
 
         fixed, constraints = _parse_given(given)
 
         if not constraints:
             return self._point_estimate(fixed, want, bandpass)
 
-        # Fundamentals given a distribution use it as their prior directly
-        # (replacing the default), rather than sampling broadly and
-        # penalizing via the likelihood -- equivalent when it's the only
-        # constraint on that parameter, and more efficient. Everything else
-        # (derived-quantity constraints, and any *scalar* given for a
-        # derived quantity -- approximated here as a tight Gaussian, since
-        # there's no sampled dimension to pin exactly) goes into the
-        # likelihood instead.
-        priors = dict(self.priors)
-        likelihood_terms = {}
-        for name, dist_obj in constraints.items():
-            if name in FUNDAMENTAL and hasattr(dist_obj, "ppf"):
-                priors[name] = dist_obj
-            else:
-                likelihood_terms[name] = dist_obj
+        # ``propagate`` is the calculator-style, backwards-compatible path;
+        # ``likelihood`` performs Bayesian conditioning on the configured
+        # population priors. Derived constraints are likelihood terms in
+        # both modes.
+        priors, likelihood_terms = _partition_constraints(
+            self.priors, constraints, input_mode
+        )
 
         fixed_fund = {k: v for k, v in fixed.items() if k in FUNDAMENTAL}
         for name, target in fixed.items():
