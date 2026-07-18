@@ -4,7 +4,7 @@ from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
 
 
 def required_fundamentals(names):
-    """Return the fundamentals needed to evaluate a collection of names.
+    """Return the fundamental parameters needed to evaluate a collection of names.
 
     Dependencies are followed recursively through :data:`DERIVED`. The
     original order in :data:`FUNDAMENTAL` is retained for deterministic

@@ -1,9 +1,5 @@
 """Generic any-subset-in -> any-subset-out solver via nested sampling (dynesty).
 
-Plain numpy by default -- dynesty calls the likelihood one point at a time,
-so jax.jit doesn't pay off here (per-call dispatch overhead dominates for a
-problem this small/serial; see relations.py for how to switch the forward
-pass to JAX if you later move to a vectorized sampler like jaxns).
 """
 import numpy as np
 from scipy import optimize
@@ -44,11 +40,9 @@ INPUT_MODES = ("propagate", "likelihood")
 
 
 def _as_distribution(p):
-    """Allow priors={'Teff': (mean, error)} as shorthand for a Gaussian --
-    the same convention (mean, error) tuples have in `given`, for
-    consistency. For a uniform prior specifically, pass
-    priors.uniform(loc, scale) (or scipy.stats.uniform, or any other
-    distribution) directly."""
+    """Allow priors={'parameter': (mean, error)} as shorthand for a Gaussian.
+    For other priors specifically, pass for example priors.uniform(loc, scale) 
+    (or scipy.stats.uniform, or any other distribution) directly."""
     if isinstance(p, tuple):
         mean, err = p
         return normal(loc=mean, scale=err)
@@ -127,7 +121,8 @@ class Solver:
     priors : dict, optional
         Distributions replacing entries in :data:`DEFAULT_PRIORS`.
     preset : {'standard', 'fast', 'precise'}, default='standard'
-        Named Dynesty accuracy/runtime configuration.
+        Named Dynesty accuracy/runtime configuration, precise is lower but
+        provides more samples and smoother posteriors.
     nlive : int, optional
         Override the preset's number of live points.
     seed : int, optional
@@ -181,7 +176,6 @@ class Solver:
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
         self._last_bandpass = None
-        # used by predict() to derive further quantities without resampling
 
     def _forward(self, fundamentals, bandpass=None):
         """Evaluate all relations for scalar or array fundamentals."""

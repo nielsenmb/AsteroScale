@@ -134,9 +134,9 @@ def envelope_fwhm(numax, Teff):
     return base * correction
 
 
-A_ENV_SUN = 2.1  # ppm, maximum radial-mode rms amplitude in TESS
+A_ENV_SUN_TESS = 2.1  # ppm, maximum radial-mode rms amplitude in TESS
 A_ENV_SUN_KEPLER = 2.5  # ppm, Kepler calibration before TESS response correction
-_A_ENV_SUN = {"TESS": A_ENV_SUN, "KEPLER": A_ENV_SUN_KEPLER}
+_A_ENV_SUN = {"TESS": A_ENV_SUN_TESS, "KEPLER": A_ENV_SUN_KEPLER}
 
 
 def normalize_bandpass(bandpass):
@@ -158,8 +158,10 @@ def normalize_bandpass(bandpass):
         If the bandpass is not supported.
     """
     if not isinstance(bandpass, str):
-        raise ValueError("bandpass must be 'TESS' or 'Kepler'.")
+        raise ValueError("bandpass must be a string.")
+    
     canonical = bandpass.strip().upper()
+    
     if canonical not in _A_ENV_SUN:
         raise ValueError(
             f"Unsupported bandpass {bandpass!r}; choose 'TESS' or 'Kepler'."
@@ -225,27 +227,27 @@ def granulation_frequency_high(numax):
     return 0.948 * numax**0.992
 
 
-def harvey_super_lorentzian(frequency, amplitude, characteristic_frequency):
-    """Evaluate a normalized Kallinger super-Lorentzian component.
+# def harvey_super_lorentzian(frequency, amplitude, characteristic_frequency):
+#     """Evaluate a normalized Kallinger super-Lorentzian component.
 
-    Parameters
-    ----------
-    frequency : float or array-like
-        Frequencies in microhertz.
-    amplitude : float
-        RMS intensity amplitude in parts per million.
-    characteristic_frequency : float
-        Characteristic frequency in microhertz.
+#     Parameters
+#     ----------
+#     frequency : float or array-like
+#         Frequencies in microhertz.
+#     amplitude : float
+#         RMS intensity amplitude in parts per million.
+#     characteristic_frequency : float
+#         Characteristic frequency in microhertz.
 
-    Returns
-    -------
-    float or ndarray
-        Power density in ppm squared per microhertz. Its integral from zero
-        to infinity equals ``amplitude**2``.
-    """
-    normalization = 2.0 * xp.sqrt(2.0) / xp.pi
-    ratio = frequency / characteristic_frequency
-    return normalization * amplitude**2 / characteristic_frequency / (1.0 + ratio**4)
+#     Returns
+#     -------
+#     float or ndarray
+#         Power density in ppm squared per microhertz. Its integral from zero
+#         to infinity equals ``amplitude**2``.
+#     """
+#     normalization = 2.0 * xp.sqrt(2.0) / xp.pi
+#     ratio = frequency / characteristic_frequency
+#     return normalization * amplitude**2 / characteristic_frequency / (1.0 + ratio**4)
 
 
 def distance(plx):
