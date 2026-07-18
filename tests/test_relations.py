@@ -29,6 +29,14 @@ def test_unknown_amplitude_bandpass_is_rejected():
         rel.envelope_amplitude(1.0, 1.0, rel.TEFF_SUN, bandpass="Gaia")
 
 
+def test_amplitude_is_zero_beyond_instability_strip_red_edge():
+    luminosity = 10.0
+    hotter_than_red_edge = rel.amplitude_red_edge(luminosity) + 100.0
+    assert rel.envelope_amplitude(
+        1.5, luminosity, hotter_than_red_edge
+    ) == pytest.approx(0.0)
+
+
 def test_kallinger_background_scalings():
     numax, mass = 100.0, 1.2
     assert rel.granulation_amplitude(numax, mass) == pytest.approx(

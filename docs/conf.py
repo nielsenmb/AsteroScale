@@ -5,7 +5,6 @@ from importlib.metadata import version as package_version
 
 project = "AsteroScale"
 author = "Martin Nielsen"
-copyright = "2026, Martin Nielsen"
 release = package_version("AsteroScale")
 version = release
 
@@ -22,9 +21,11 @@ extensions = [
 ]
 
 autosummary_generate = True
+autodoc_member_order = "bysource"
+autodoc_mock_imports = ["dynesty", "jax"]
+autodoc_typehints = "description"
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
-autodoc_typehints = "description"
 
 myst_enable_extensions = [
     "amsmath",

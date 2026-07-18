@@ -787,16 +787,11 @@ class Solver:
         return out
 
     def predict(self, want, bandpass=None, return_validity=False):
-        """Compute additional quantities from the posterior/point estimate
-        of the last solve() call, without re-running the sampler -- e.g.
+        """Compute quantities from the most recent solution.
 
-            solver.solve({"Teff": (5777, 50), "numax": (3090, 30),
-                          "dnu": (135.1, 1.0)}, want=["M", "R"])
-            extra = solver.predict(["L", "rho", "logg", "A_env"])
-
-        Works for both the nested-sampling path (returns arrays, same
-        length as the posterior from the last solve() call) and the
-        point-estimate path (returns plain floats).
+        This does not rerun the sampler. A sampled solution returns arrays
+        with the same length as the previous posterior, while a point-estimate
+        solution returns scalar values.
 
         Parameters
         ----------
@@ -818,6 +813,23 @@ class Solver:
             If :meth:`solve` has not been called.
         ValueError
             If required fundamentals were absent from the previous problem.
+
+        Examples
+        --------
+        Solve for mass and radius, then derive additional quantities from the
+        same posterior samples:
+
+        .. code-block:: python
+
+           solver.solve(
+               {
+                   "Teff": (5777, 50),
+                   "numax": (3090, 30),
+                   "dnu": (135.1, 1.0),
+               },
+               want=["M", "R"],
+           )
+           extra = solver.predict(["L", "rho", "logg", "A_env"])
         """
         if self._last_fund is None:
             raise RuntimeError(

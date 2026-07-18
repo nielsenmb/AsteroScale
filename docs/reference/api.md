@@ -1,39 +1,56 @@
 # API reference
 
+The API documentation below is generated from the NumPy-style docstrings in
+the AsteroScale source code.
+
 ## Main interface
 
-```{automodule} asteroscale
-:members: solve, solve_many, summarize, plot_posterior
+```{eval-rst}
+.. autofunction:: asteroscale.solve
+
+.. autofunction:: asteroscale.solve_many
+
+.. autofunction:: asteroscale.summarize
+
+.. autofunction:: asteroscale.plot_posterior
 ```
 
 ## Solver
 
-```{autoclass} asteroscale.Solver
-:members:
-:show-inheritance:
+```{eval-rst}
+.. autoclass:: asteroscale.Solver
+   :members:
+   :show-inheritance:
 ```
 
 ## Scaling relations
 
-```{automodule} asteroscale.relations
-:members:
-:undoc-members:
+```{eval-rst}
+.. automodule:: asteroscale.relations
+   :members:
+   :member-order: bysource
 ```
 
 ## Sampling settings
 
-```{automodule} asteroscale.sampling
-:members:
+```{eval-rst}
+.. automodule:: asteroscale.sampling
+   :members:
+   :member-order: bysource
 ```
 
 ## Calibration settings
 
-```{automodule} asteroscale.calibration
-:members:
+```{eval-rst}
+.. automodule:: asteroscale.calibration
+   :members:
+   :member-order: bysource
 ```
 
 ## Calibration validity
 
-```{automodule} asteroscale.validity
-:members:
+```{eval-rst}
+.. automodule:: asteroscale.validity
+   :members:
+   :member-order: bysource
 ```
