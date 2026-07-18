@@ -1,20 +1,3 @@
-"""Small hand-written distributions used throughout Solver, as priors and
-(for Normal/TruncatedNormal) as likelihood terms.
-
-Anything with a .ppf(u) method (mapping the unit interval to the
-parameter's support) works as a prior; anything with .logpdf(x) works as a
-likelihood term. Frozen scipy.stats distributions satisfy both and remain
-completely fine to pass in yourself (Solver(priors={...}) and given={...}
-both accept them via duck typing) -- these classes exist because
-scipy.stats' generic distribution-object machinery is surprisingly slow
-for the scalar, one-value-at-a-time calls this package's sampler actually
-makes (see the README's JAX/performance section for the benchmark:
-scipy.stats.norm.ppf managed ~23,500 calls/s in that regime, vs. ~5.4M/s
-for the equivalent scipy.special call used directly, as below). Nothing
-here reflects scipy.stats being unpolished -- its overhead is the price of
-a very general, batch-oriented interface that isn't the shape of dynesty's
-workload.
-"""
 import numpy as np
 import scipy.special as sp
 from .distributions import uniform, TruncatedPowerLaw, Exponential, TruncatedNormal

@@ -53,11 +53,13 @@ def solve_many(
     bootstrap=None,
     walks=None,
     update_interval=None,
+    bandpass="TESS",
     input_mode="propagate",
     n_jobs=None,
     base_seed=0,
     show_progress=False,
 ):
+    
     """Solve many independent targets in parallel, one process per target
     (up to n_jobs at a time).
 
@@ -81,27 +83,31 @@ def solve_many(
     aborting the whole batch -- check for that key rather than assuming
     every requested quantity is present for every target.
     """
-    solver_kwargs = dict(
-        priors=priors,
-        preset=preset,
-        nlive=nlive,
-        sample=sample,
-        bound=bound,
-        bootstrap=bootstrap,
-        walks=walks,
-        update_interval=update_interval,
-        input_mode=input_mode,
-    )
+    solver_kwargs = dict(priors=priors,
+                         preset=preset,
+                         nlive=nlive,
+                         sample=sample,
+                         bound=bound,
+                         bootstrap=bootstrap,
+                         walks=walks,
+                         update_interval=update_interval,
+                         bandpass=bandpass,
+                         input_mode=input_mode,
+                        )
+    
     items = list(targets.items())
+
     want_for = want if isinstance(want, dict) else {tid: want for tid, _ in items}
 
     jobs = [
         (tid, given, want_for[tid], solver_kwargs, base_seed + i)
         for i, (tid, given) in enumerate(items)
-    ]
+        ]
 
     ctx = multiprocessing.get_context("spawn")
+
     results = {}
+    
     with ProcessPoolExecutor(max_workers=n_jobs, mp_context=ctx, initializer=_init_worker) as pool:
         futures = {pool.submit(_solve_one, job): job[0] for job in jobs}
         done = 0
