@@ -21,5 +21,5 @@ Mass, radius, luminosity and mean density are expressed in solar units.
 | `logg` | Base-10 surface gravity in cgs units | dex |
 | `d` | Distance | pc |
 
-Use `want="all"` to return every available fundamental and derived
+Use `want="all"` when using the solver to return every available fundamental parameter and derived
 quantity. See {mod}`asteroscale.relations` for the complete relation registry.

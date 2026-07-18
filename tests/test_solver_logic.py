@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from asteroscale import Solver
+from asteroscale.calibration import DEFAULT_RELATION_SCATTER
 from asteroscale.distributions import normal
 from asteroscale.solver import _partition_constraints
 from asteroscale.forward import evaluate_relations
@@ -124,6 +125,26 @@ def test_relation_offset_is_applied_multiplicatively():
     assert shifted == pytest.approx(1.1 * central)
 
 
+@pytest.mark.parametrize("preset", ["fast", "standard"])
+def test_fast_and_standard_presets_disable_relation_scatter(preset):
+    solver = Solver(preset=preset)
+    assert set(solver.relation_scatter) == set(DEFAULT_RELATION_SCATTER)
+    assert all(value == 0.0 for value in solver.relation_scatter.values())
+
+
+def test_precise_preset_uses_default_relation_scatter():
+    solver = Solver(preset="precise")
+    assert solver.relation_scatter == DEFAULT_RELATION_SCATTER
+
+
+def test_explicit_relation_scatter_overrides_selected_preset():
+    solver = Solver(
+        preset="standard", relation_scatter={"numax": 0.03}
+    )
+    assert solver.relation_scatter["numax"] == pytest.approx(0.03)
+    assert solver.relation_scatter["dnu"] == 0.0
+
+
 def test_zero_relation_scatter_disables_predictive_broadening():
     given = {
         "M": (1.0, 1e-6), "R": 1.0, "Teff": 5772.0, "FeH": 0.0,
@@ -131,12 +152,14 @@ def test_zero_relation_scatter_disables_predictive_broadening():
     without = Solver(seed=8, relation_scatter={"numax": 0.0}).solve(
         given, ["numax"]
     )["numax"]
-    with_default = Solver(seed=8).solve(given, ["numax"])["numax"]
+    with_default = Solver(seed=8, preset="precise").solve(
+        given, ["numax"]
+    )["numax"]
     assert np.std(with_default) > 1000.0 * np.std(without)
 
 
 def test_exact_forward_prediction_can_sample_relation_scatter():
-    result = Solver(seed=9).solve(
+    result = Solver(seed=9, preset="precise").solve(
         {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},
         ["numax"],
         sample_relation_scatter=True,
