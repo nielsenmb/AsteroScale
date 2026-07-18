@@ -10,6 +10,8 @@ The tutorials are organised around common questions:
   the result?
 - {doc}`real-star-comparisons`: how closely do scaling-relation results agree
   with published values?
+- {doc}`priors-and-relations`: what shapes do the default priors have, and
+  how do the scaling relations vary with stellar properties?
 
 ```{toctree}
 :maxdepth: 1
@@ -19,6 +21,7 @@ predicting-oscillations
 inferring-stellar-properties
 gaia-constraints
 real-star-comparisons
+priors-and-relations
 ```
 
 The original combined notebook remains available for now:

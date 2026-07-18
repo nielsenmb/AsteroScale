@@ -15,6 +15,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 def _init_worker():
+    """Limit numerical libraries to one thread in each worker process."""
     # Each worker process runs its own single-threaded solve() -- the
     # parallelism here is across processes, not within one. Without this,
     # numpy/scipy's BLAS backend (OpenBLAS/MKL) may also try to spawn
@@ -27,6 +28,18 @@ def _init_worker():
 
 
 def _solve_one(args):
+    """Run one target inside a batch worker.
+
+    Parameters
+    ----------
+    args : tuple
+        ``(target_id, given, want, solver_kwargs, seed)`` job description.
+
+    Returns
+    -------
+    tuple
+        Target identifier, result or ``None``, and error string or ``None``.
+    """
     from .solver import Solver  # imported here, not at module level -- see
     # _init_worker: numpy/scipy need to see the thread-count env vars
     # *before* they're imported, and with the 'spawn' start method each
@@ -60,28 +73,40 @@ def solve_many(
     show_progress=False,
 ):
     
-    """Solve many independent targets in parallel, one process per target
-    (up to n_jobs at a time).
+    """Solve independent targets in parallel.
 
-    targets: dict {target_id: given_dict}, e.g.
-        {"KIC 12345678": {"Teff": (5777, 50), "numax": (3090, 30), ...},
-         "KIC 87654321": {...}}
-    want: list of quantity names applied to every target, or a dict
-        {target_id: want_list} for per-target requests.
-    priors, preset, nlive, sample, bound, input_mode: shared Solver settings used for every
-        target -- a fresh Solver is built in each worker process, nothing
-        is shared/reused across targets. Custom priors must be picklable
-        (frozen scipy.stats distributions and the classes in priors.py
-        are; anything JAX-jitted likely isn't).
-    n_jobs: number of worker processes (default: os.cpu_count()).
-    base_seed: each target gets its own reproducible seed (base_seed +
-        index) rather than sharing one RNG stream across workers.
-    show_progress: print a running "done so far" count.
+    Parameters
+    ----------
+    targets : dict
+        Mapping from target identifiers to ``given`` dictionaries.
+    want : sequence of str or dict
+        Quantities requested for every target, or a mapping from target
+        identifier to a target-specific request.
+    priors : dict, optional
+        Shared prior overrides. Custom distributions must be picklable.
+    preset : {'fast', 'standard', 'precise'}, default='standard'
+        Shared named sampling configuration.
+    nlive : int, optional
+        Shared number of live points.
+    sample, bound : str, optional
+        Shared Dynesty sampling and bounding methods.
+    bootstrap, walks, update_interval : int, optional
+        Additional shared Dynesty settings.
+    bandpass : {'TESS', 'Kepler'}, default='TESS'
+        Photometric response used for ``A_env``.
+    input_mode : {'propagate', 'likelihood'}, default='propagate'
+        Interpretation of uncertain fundamental inputs.
+    n_jobs : int, optional
+        Maximum worker processes. The default uses the available CPUs.
+    base_seed : int, default=0
+        Seed for the first target; subsequent targets add their index.
+    show_progress : bool, default=False
+        Print the number of completed targets.
 
-    Returns {target_id: solve()_output}, in the same order as `targets`.
-    A target whose solve() call raised gets {"_error": "..."} instead of
-    aborting the whole batch -- check for that key rather than assuming
-    every requested quantity is present for every target.
+    Returns
+    -------
+    dict
+        Results in input order. Failed targets contain an ``"_error"`` key.
     """
     solver_kwargs = dict(priors=priors,
                          preset=preset,

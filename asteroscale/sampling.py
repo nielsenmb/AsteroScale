@@ -34,7 +34,13 @@ class SamplerSettings:
     update_interval: Optional[int] = None
 
     def resolved(self):
-        """Return settings with a concrete bound-update interval."""
+        """Return settings with a concrete bound-update interval.
+
+        Returns
+        -------
+        SamplerSettings
+            Copy with ``update_interval`` resolved to an integer.
+        """
         interval = 10 * self.nlive if self.update_interval is None else self.update_interval
         return replace(self, update_interval=interval)
 
@@ -60,6 +66,13 @@ def get_sampler_settings(preset="standard", **overrides):
     -------
     SamplerSettings
         Fully resolved immutable configuration.
+
+    Raises
+    ------
+    ValueError
+        If ``preset`` is unknown.
+    TypeError
+        If an override is not a sampler setting.
     """
     try:
         settings = PRESETS[preset]

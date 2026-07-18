@@ -25,6 +25,16 @@ def _metal_mass_fraction(FeH):
     """Z from [Fe/H], assuming solar-scaled composition ([alpha/Fe]=0).
     Calibration from Bertelli et al. 1994 / Salaris et al. 1993, as used in
     e.g. Zinn et al. 2019 to estimate mean molecular weight from [Fe/H].
+
+    Parameters
+    ----------
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate metal mass fraction.
     """
     return 10 ** (0.977 * FeH - 1.699)
 
@@ -35,6 +45,16 @@ def _mean_molecular_weight(FeH):
     Assumes primordial Y_p=0.248 and helium enrichment dY/dZ=1.0. This
     ignores metals' contribution to free electrons -- fine near solar
     metallicity, increasingly approximate for very metal-poor stars.
+
+    Parameters
+    ----------
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Fully ionized mean molecular weight.
     """
     Z = _metal_mass_fraction(FeH)
     Y = 0.248 + 1.0 * Z
@@ -53,12 +73,38 @@ def f_numax(FeH):
     stellar model grids to evaluate and isn't practical from observables
     alone. That term is fixed to 1 here -- this is the mu-only
     approximation used e.g. in Zinn et al. 2019.
+
+    Parameters
+    ----------
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Dimensionless molecular-weight correction.
     """
     mu = _mean_molecular_weight(FeH)
     return xp.sqrt(mu / _MU_SUN)
 
 
 def numax(M, R, Teff, FeH):
+    """Predict the frequency of maximum oscillation power.
+
+    Parameters
+    ----------
+    M, R : float or array-like
+        Stellar mass and radius in solar units.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Frequency of maximum power in microhertz.
+    """
     return NUMAX_SUN * M / R**2 / xp.sqrt(Teff / TEFF_SUN) * f_numax(FeH)
 
 
@@ -66,6 +112,20 @@ DNU_SUN = 135.1  # Huber et al. 2011, used to anchor the reference function belo
 
 
 def _dnu_ref_raw(Teff, FeH):
+    """Evaluate the unnormalized Guggenberger reference function.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Unnormalized reference large separation in microhertz.
+    """
     x = Teff / 1.0e4
     A = 0.64 * FeH + 1.78
     lam = -0.55 * FeH + 1.23
@@ -89,24 +149,89 @@ def dnu_ref(Teff, FeH):
     Calibrated for -1.0 < [Fe/H] < 0.5, 0.8-2.0 Msun, main sequence to cool
     red giants (down to numax ~ 6 muHz). Renormalized to equal DNU_SUN
     exactly at solar Teff/[Fe/H] -- see _DNU_REF_NORM above.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Reference large separation in microhertz.
     """
     return _dnu_ref_raw(Teff, FeH) * _DNU_REF_NORM
 
 
 def dnu(M, R, Teff, FeH):
+    """Predict the large frequency separation.
+
+    Parameters
+    ----------
+    M, R : float or array-like
+        Stellar mass and radius in solar units.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    FeH : float or array-like
+        Metallicity in dex relative to solar.
+
+    Returns
+    -------
+    float or ndarray
+        Large frequency separation in microhertz.
+    """
     return dnu_ref(Teff, FeH) * xp.sqrt(M / R**3)
 
 
 def luminosity(R, Teff):
+    """Compute luminosity from radius and effective temperature.
+
+    Parameters
+    ----------
+    R : float or array-like
+        Radius in solar units.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Luminosity in solar units.
+    """
     return R**2 * (Teff / TEFF_SUN) ** 4
 
 
 def logg(M, R):
+    """Compute base-10 surface gravity in cgs units.
+
+    Parameters
+    ----------
+    M, R : float or array-like
+        Stellar mass and radius in solar units.
+
+    Returns
+    -------
+    float or ndarray
+        Logarithmic surface gravity in dex.
+    """
     return xp.log10(GSUN_CGS * M / R**2)
 
 
 def mean_density(M, R):
-    """Mean density in solar units (rho/rho_sun = (M/Msun)/(R/Rsun)^3)."""
+    """Compute mean stellar density.
+
+    Parameters
+    ----------
+    M, R : float or array-like
+        Stellar mass and radius in solar units.
+
+    Returns
+    -------
+    float or ndarray
+        Mean density in solar-density units.
+    """
     return M / R**3
 
 
@@ -218,12 +343,34 @@ def granulation_amplitude(numax, M):
 
 
 def granulation_frequency_low(numax):
-    """Return the lower Kallinger characteristic frequency in microhertz."""
+    """Return the lower Kallinger characteristic frequency.
+
+    Parameters
+    ----------
+    numax : float or array-like
+        Frequency of maximum oscillation power in microhertz.
+
+    Returns
+    -------
+    float or ndarray
+        Lower granulation frequency in microhertz.
+    """
     return 0.317 * numax**0.970
 
 
 def granulation_frequency_high(numax):
-    """Return the higher Kallinger characteristic frequency in microhertz."""
+    """Return the higher Kallinger characteristic frequency.
+
+    Parameters
+    ----------
+    numax : float or array-like
+        Frequency of maximum oscillation power in microhertz.
+
+    Returns
+    -------
+    float or ndarray
+        Higher granulation frequency in microhertz.
+    """
     return 0.948 * numax**0.992
 
 
@@ -251,12 +398,34 @@ def granulation_frequency_high(numax):
 
 
 def distance(plx):
-    """Distance in pc from parallax in mas."""
+    """Convert parallax to distance.
+
+    Parameters
+    ----------
+    plx : float or array-like
+        Parallax in milliarcseconds.
+
+    Returns
+    -------
+    float or ndarray
+        Distance in parsecs.
+    """
     return 1000.0 / plx
 
 
 def mbol(L):
-    """Absolute bolometric magnitude from luminosity (solar units)."""
+    """Convert luminosity to absolute bolometric magnitude.
+
+    Parameters
+    ----------
+    L : float or array-like
+        Luminosity in solar units.
+
+    Returns
+    -------
+    float or ndarray
+        Absolute bolometric magnitude.
+    """
     return MBOL_SUN - 2.5 * xp.log10(L)
 
 
@@ -265,6 +434,16 @@ def bc_g(Teff):
 
     Placeholder only -- swap in a real BC grid (e.g. MIST/Casagrande &
     VandenBerg 2018) for anything beyond order-of-magnitude checks.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate Gaia G bolometric correction in magnitudes.
     """
     x = (Teff - TEFF_SUN) / 1000.0
     return -0.068 - 0.008 * x
@@ -276,6 +455,16 @@ def bc_bp(Teff):
     Placeholder only, calibrated to give M_BP,sun ~ 5.03 (Mbol_sun - BC_BP =
     4.74 - (-0.29) = 5.03), matching approximate published Gaia solar colors
     (BP-RP_sun ~ 0.82). Swap in a real BC grid for anything more serious.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate Gaia BP bolometric correction in magnitudes.
     """
     x = (Teff - TEFF_SUN) / 1000.0
     return -0.29 - 0.30 * x
@@ -287,6 +476,16 @@ def bc_rp(Teff):
     Placeholder only, calibrated to give M_RP,sun ~ 4.21 (Mbol_sun - BC_RP =
     4.74 - 0.53 = 4.21), matching approximate published Gaia solar colors.
     Swap in a real BC grid for anything more serious.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate Gaia RP bolometric correction in magnitudes.
     """
     x = (Teff - TEFF_SUN) / 1000.0
     return 0.53 + 0.15 * x
@@ -303,26 +502,90 @@ _A_RP_OVER_A0 = 0.589
 
 
 def a_bp(A_G):
+    """Convert Gaia G extinction to approximate BP extinction.
+
+    Parameters
+    ----------
+    A_G : float or array-like
+        Gaia G-band extinction in magnitudes.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate Gaia BP extinction in magnitudes.
+    """
     return (_A_BP_OVER_A0 / _A_G_OVER_A0) * A_G
 
 
 def a_rp(A_G):
+    """Convert Gaia G extinction to approximate RP extinction.
+
+    Parameters
+    ----------
+    A_G : float or array-like
+        Gaia G-band extinction in magnitudes.
+
+    Returns
+    -------
+    float or ndarray
+        Approximate Gaia RP extinction in magnitudes.
+    """
     return (_A_RP_OVER_A0 / _A_G_OVER_A0) * A_G
 
 
 def bp_rp_color(BP_mag, RP_mag):
     """Gaia BP-RP color. Note this comes out independent of distance --
     the distance modulus cancels between BP_mag and RP_mag -- so it
-    constrains Teff/extinction without needing a parallax at all."""
+    constrains Teff/extinction without needing a parallax at all.
+
+    Parameters
+    ----------
+    BP_mag, RP_mag : float or array-like
+        Apparent or absolute Gaia BP and RP magnitudes.
+
+    Returns
+    -------
+    float or ndarray
+        Gaia BP-RP color in magnitudes.
+    """
     return BP_mag - RP_mag
 
 
 def abs_g_mag(Mbol, BC_G):
+    """Compute absolute magnitude from bolometric magnitude and correction.
+
+    Parameters
+    ----------
+    Mbol : float or array-like
+        Absolute bolometric magnitude.
+    BC_G : float or array-like
+        Bolometric correction in magnitudes.
+
+    Returns
+    -------
+    float or ndarray
+        Absolute magnitude in the selected band.
+    """
     return Mbol - BC_G
 
 
 def app_g_mag(M_G, d, A_G):
-    """Apparent Gaia G magnitude given absolute mag, distance (pc), extinction."""
+    """Compute apparent magnitude using the distance modulus.
+
+    Parameters
+    ----------
+    M_G : float or array-like
+        Absolute magnitude.
+    d : float or array-like
+        Distance in parsecs.
+    A_G : float or array-like
+        Extinction in magnitudes.
+
+    Returns
+    -------
+    float or ndarray
+        Apparent magnitude.
+    """
     return M_G + 5 * xp.log10(d) - 5 + A_G
 
 

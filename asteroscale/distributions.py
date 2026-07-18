@@ -27,6 +27,8 @@ class beta:
         scale : float
             The width of the beta distribution. Effectively sets the upper
             bound for the distribution, which is loc+scale.
+        rng : numpy.random.Generator, optional
+            Random-number generator used by :meth:`rv`.
         """
 
         # Turn init args into attributes
@@ -68,7 +70,7 @@ class beta:
         return x
 
     def _set_stdatt(self):
-        """Set mean and median for the distribution"""
+        """Set numerical mean and median attributes."""
         x = jnp.linspace(self.ppf(1e-6), self.ppf(1 - 1e-6), 1000)
 
         self.mean = jnp.trapezoid(x * jnp.array([self.pdf(_x) for _x in x]), x)
@@ -77,18 +79,52 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def _transformx(self, x):
-        """Translates and scales the input x to the unit interval according
-        to the loc and scale parameters."""
+        """Transform values to the unit interval.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Values in the configured location-scale coordinates.
+
+        Returns
+        -------
+        float or ndarray
+            Values transformed to the standard beta coordinates.
+        """
         return (x - self.loc) / self.scale
 
     @partial(jax.jit, static_argnums=(0,))
     def _inverse_transform(self, x):
-        """Invert scaling on input."""
+        """Transform standard beta values to configured coordinates.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Values in standard beta coordinates.
+
+        Returns
+        -------
+        float or ndarray
+            Values in the configured location-scale coordinates.
+        """
         return x * self.scale + self.loc
 
     @partial(jax.jit, static_argnums=(0,))
     def pdf(self, x, norm=True):
-        """Return PDF. Normalized to unit integral by default."""
+        """Evaluate the beta probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+        norm : bool, default=True
+            Apply the normalization constant.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density.
+        """
         _x = self._transformx(x)
 
         T = jax.lax.lt(_x, 0.0) | jax.lax.lt(1.0, _x)
@@ -103,7 +139,20 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def logpdf(self, x, norm=True):
-        """Return log-PDF. Normalized to unit integral by default."""
+        """Evaluate the beta log-probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+        norm : bool, default=True
+            Apply the normalization constant.
+
+        Returns
+        -------
+        float or ndarray
+            Log-probability density.
+        """
         x = jnp.array(x)
 
         _x = self._transformx(x)
@@ -121,6 +170,18 @@ class beta:
         return y
 
     def cdf(self, x):
+        """Evaluate the beta cumulative distribution function.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Cumulative probability.
+        """
         _x = self._transformx(x)
 
         y = jsp.betainc(self.a, self.b, _x)
@@ -133,6 +194,18 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def ppf(self, y):
+        """Evaluate the beta quantile function.
+
+        Parameters
+        ----------
+        y : float or array-like
+            Cumulative probabilities in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Distribution quantiles.
+        """
         _x = self.betaincinv(self.a, self.b, y)
 
         x = self._inverse_transform(_x)
@@ -141,6 +214,26 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def update_x(self, x, a, b, p, a1, b1, afac):
+        """Apply one Newton-Halley update for the inverse beta CDF.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Current quantile estimate.
+        a, b : float
+            Beta shape parameters.
+        p : float or array-like
+            Target cumulative probability.
+        a1, b1 : float
+            Shape parameters minus one.
+        afac : float
+            Negative log beta normalization.
+
+        Returns
+        -------
+        tuple
+            Updated estimate and step size.
+        """
         err = jsp.betainc(a, b, x) - p
         t = jnp.exp(a1 * jnp.log(x) + b1 * jnp.log(1.0 - x) + afac)
         u = err / t
@@ -154,6 +247,20 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def func_1(self, a, b, p):
+        """Initialize inverse-CDF iteration when both shapes exceed one.
+
+        Parameters
+        ----------
+        a, b : float
+            Beta shape parameters.
+        p : float or array-like
+            Target cumulative probability.
+
+        Returns
+        -------
+        float or ndarray
+            Initial quantile estimate.
+        """
         pp = jnp.where(p < 0.5, p, 1.0 - p)
         t = jnp.sqrt(-2.0 * jnp.log(pp))
         x = (2.30753 + t * 0.27061) / (1.0 + t * (0.99229 + t * 0.04481)) - t
@@ -167,6 +274,20 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def func_2(self, a, b, p):
+        """Initialize inverse-CDF iteration for small shape parameters.
+
+        Parameters
+        ----------
+        a, b : float
+            Beta shape parameters.
+        p : float or array-like
+            Target cumulative probability.
+
+        Returns
+        -------
+        float or ndarray
+            Initial quantile estimate.
+        """
         lna = jnp.log(a / (a + b))
         lnb = jnp.log(b / (a + b))
         t = jnp.exp(a * lna) / a
@@ -181,6 +302,20 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def compute_x(self, p, a, b):
+        """Select an initial inverse-CDF estimate.
+
+        Parameters
+        ----------
+        p : float or array-like
+            Target cumulative probability.
+        a, b : float
+            Beta shape parameters.
+
+        Returns
+        -------
+        float or ndarray
+            Initial quantile estimate.
+        """
         return jnp.where(
             jnp.logical_and(a >= 1.0, b >= 1.0),
             self.func_1(a, b, p),
@@ -189,6 +324,20 @@ class beta:
 
     @partial(jax.jit, static_argnums=(0,))
     def betaincinv(self, a, b, p):
+        """Invert the regularized incomplete beta function.
+
+        Parameters
+        ----------
+        a, b : float
+            Beta shape parameters.
+        p : float or array-like
+            Target cumulative probability.
+
+        Returns
+        -------
+        float or ndarray
+            Standard beta quantile.
+        """
         a1 = a - 1.0
         b1 = b - 1.0
 
@@ -220,6 +369,13 @@ class distribution:
 
         Wraps a set of ppf/pdf/logpdf/cdf callables (e.g. from a KDE fit or
         any other source) with the same interface as the other classes here.
+
+        Parameters
+        ----------
+        ppf, pdf, logpdf, cdf : callable
+            Quantile, density, log-density, and cumulative functions.
+        rng : numpy.random.Generator, optional
+            Random-number generator used by :meth:`rv`.
         """
 
         if rng is None:
@@ -235,10 +391,18 @@ class distribution:
         self._set_stdatt()
 
     def rv(self):
+        """Draw one random variate.
+
+        Returns
+        -------
+        float
+            Random draw from the wrapped distribution.
+        """
         u = self.rng.uniform(0, 1)
         return self.ppf(u)
 
     def _set_stdatt(self):
+        """Set numerical mean and median attributes."""
         x = jnp.linspace(self.ppf(1e-6), self.ppf(1 - 1e-6), 1000)
         self.mean = jnp.trapezoid(x * jnp.array([self.pdf(_x) for _x in x]), x)
         self.median = self.ppf(0.5)
@@ -259,6 +423,15 @@ class TruncatedPowerLaw:
     """
 
     def __init__(self, alpha, low, high):
+        """Initialize a normalized truncated power law.
+
+        Parameters
+        ----------
+        alpha : float
+            Positive exponent in ``p(x) proportional to x**(-alpha)``.
+        low, high : float
+            Inclusive lower and upper truncation limits.
+        """
         self.alpha = alpha
         self.low = low
         self.high = high
@@ -272,12 +445,36 @@ class TruncatedPowerLaw:
             self._high_p = high**self._p
 
     def ppf(self, u):
+        """Evaluate the quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Power-law quantile.
+        """
         u = np.asarray(u)
         if self._is_loguniform:
             return np.exp(self._log_low + u * (self._log_high - self._log_low))
         return (self._low_p + u * (self._high_p - self._low_p)) ** (1.0 / self._p)
 
     def pdf(self, x):
+        """Evaluate the normalized probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density, zero outside the truncation interval.
+        """
         x = np.asarray(x)
         if self._is_loguniform:
             norm = 1.0 / (x * (self._log_high - self._log_low))
@@ -286,6 +483,18 @@ class TruncatedPowerLaw:
         return np.where((x >= self.low) & (x <= self.high), norm, 0.0)
     
 def _std_normal_cdf(z):
+    """Evaluate the standard-normal cumulative distribution function.
+
+    Parameters
+    ----------
+    z : float or array-like
+        Standardized evaluation points.
+
+    Returns
+    -------
+    float or ndarray
+        Cumulative probability.
+    """
     return 0.5 * (1.0 + sp.erf(z / np.sqrt(2.0)))
 
 
@@ -297,17 +506,52 @@ class TruncatedNormal:
     """
 
     def __init__(self, loc, scale, low, high):
+        """Initialize a truncated normal distribution.
+
+        Parameters
+        ----------
+        loc : float
+            Mean of the untruncated normal distribution.
+        scale : float
+            Standard deviation of the untruncated distribution.
+        low, high : float
+            Inclusive truncation limits.
+        """
         self.loc, self.scale, self.low, self.high = loc, scale, low, high
         self._cdf_low = _std_normal_cdf((low - loc) / scale)
         self._cdf_high = _std_normal_cdf((high - loc) / scale)
 
     def ppf(self, u):
+        """Evaluate the truncated-normal quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Distribution quantile.
+        """
         u = np.asarray(u)
         p = self._cdf_low + u * (self._cdf_high - self._cdf_low)
         z = np.sqrt(2.0) * sp.erfinv(2.0 * p - 1.0)
         return self.loc + self.scale * z
 
     def logpdf(self, x):
+        """Evaluate the truncated-normal log-density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Log-density, or negative infinity outside the limits.
+        """
         x = np.asarray(x)
         z = (x - self.loc) / self.scale
         norm_const = self._cdf_high - self._cdf_low
@@ -317,25 +561,80 @@ class TruncatedNormal:
         return np.where(inside, base, -np.inf)
 
     def pdf(self, x):
+        """Evaluate the truncated-normal probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density.
+        """
         return np.exp(self.logpdf(x))
     
 class Exponential:
     """Exponential with the given scale (1/rate) -- scipy.stats convention."""
 
     def __init__(self, scale=1.0):
+        """Initialize an exponential distribution.
+
+        Parameters
+        ----------
+        scale : float, default=1.0
+            Distribution scale, equal to the inverse rate.
+        """
         self.scale = scale
         self.low = 0.0
         self.high = np.inf
 
     def ppf(self, u):
+        """Evaluate the exponential quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Distribution quantile.
+        """
         u = np.asarray(u)
         return -self.scale * np.log1p(-u)
 
     def logpdf(self, x):
+        """Evaluate the exponential log-density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Log-density, or negative infinity for negative values.
+        """
         x = np.asarray(x)
         return np.where(x >= 0, -x / self.scale - np.log(self.scale), -np.inf)
 
     def pdf(self, x):
+        """Evaluate the exponential probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density.
+        """
         return np.exp(self.logpdf(x))
     
 class uniform:
@@ -343,21 +642,66 @@ class uniform:
     convention (not (lo, hi))."""
 
     def __init__(self, loc=0.0, scale=1.0):
+        """Initialize a uniform distribution.
+
+        Parameters
+        ----------
+        loc : float, default=0.0
+            Inclusive lower limit.
+        scale : float, default=1.0
+            Width of the distribution.
+        """
         self.loc = loc
         self.scale = scale
         self.low = loc
         self.high = loc + scale
 
     def ppf(self, u):
+        """Evaluate the uniform quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Distribution quantile.
+        """
         u = np.asarray(u)
         return self.loc + u * self.scale
 
     def logpdf(self, x):
+        """Evaluate the uniform log-density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Log-density, or negative infinity outside the support.
+        """
         x = np.asarray(x)
         inside = (x >= self.loc) & (x <= self.loc + self.scale)
         return np.where(inside, -np.log(self.scale), -np.inf)
 
     def pdf(self, x):
+        """Evaluate the uniform probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density.
+        """
         return np.exp(self.logpdf(x))
 
 class normal:
@@ -365,21 +709,66 @@ class normal:
     scipy.stats.norm."""
 
     def __init__(self, loc=0.0, scale=1.0):
+        """Initialize a normal distribution.
+
+        Parameters
+        ----------
+        loc : float, default=0.0
+            Distribution mean.
+        scale : float, default=1.0
+            Distribution standard deviation.
+        """
         self.loc = loc
         self.scale = scale
         self.low = -np.inf
         self.high = np.inf
 
     def ppf(self, u):
+        """Evaluate the normal quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Distribution quantile.
+        """
         u = np.asarray(u)
         return self.loc + self.scale * np.sqrt(2.0) * sp.erfinv(2.0 * u - 1.0)
 
     def logpdf(self, x):
+        """Evaluate the normal log-density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Log-probability density.
+        """
         x = np.asarray(x)
         z = (x - self.loc) / self.scale
         return -0.5 * z**2 - np.log(self.scale) - 0.5 * np.log(2.0 * np.pi)
 
     def pdf(self, x):
+        """Evaluate the normal probability density.
+
+        Parameters
+        ----------
+        x : float or array-like
+            Evaluation points.
+
+        Returns
+        -------
+        float or ndarray
+            Probability density.
+        """
         return np.exp(self.logpdf(x))
- 
+
  

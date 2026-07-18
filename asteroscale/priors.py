@@ -18,6 +18,13 @@ class ParallaxPrior:
     """
 
     def __init__(self, length_scale_pc=1350.0):
+        """Initialize the exponentially decreasing distance prior.
+
+        Parameters
+        ----------
+        length_scale_pc : float, default=1350.0
+            Exponential distance scale in parsecs.
+        """
         self.length_scale_pc = length_scale_pc
         # Sensible physical bounds for callers that want them (e.g. the
         # point-estimate least-squares solve) -- not used by .ppf itself.
@@ -25,6 +32,18 @@ class ParallaxPrior:
         self.high = 1000.0  # mas, ~1 pc: nearer than any known star
 
     def ppf(self, u):
+        """Evaluate the parallax quantile function.
+
+        Parameters
+        ----------
+        u : float or array-like
+            Cumulative probability in the interval [0, 1].
+
+        Returns
+        -------
+        float or ndarray
+            Parallax quantile in milliarcseconds.
+        """
         u = np.asarray(u)
         r_pc = self.length_scale_pc * sp.gammaincinv(3.0, 1.0 - u)
         return 1000.0 / r_pc

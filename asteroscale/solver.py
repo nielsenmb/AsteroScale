@@ -40,9 +40,18 @@ INPUT_MODES = ("propagate", "likelihood")
 
 
 def _as_distribution(p):
-    """Allow priors={'parameter': (mean, error)} as shorthand for a Gaussian.
-    For other priors specifically, pass for example priors.uniform(loc, scale) 
-    (or scipy.stats.uniform, or any other distribution) directly."""
+    """Convert tuple shorthand to a normal distribution.
+
+    Parameters
+    ----------
+    p : tuple or object
+        ``(mean, error)`` pair or distribution-like object.
+
+    Returns
+    -------
+    object
+        Normal distribution for tuple input, otherwise the original object.
+    """
     if isinstance(p, tuple):
         mean, err = p
         return normal(loc=mean, scale=err)
@@ -58,6 +67,18 @@ def _parse_given(given):
       - a (mean, error) tuple -- wrapped as a Gaussian (priors.normal).
       - any object with .logpdf and/or .ppf -- used directly, e.g. for
         asymmetric or otherwise non-Gaussian uncertainties.
+
+    Parameters
+    ----------
+    given : dict
+        Mapping from quantity names to exact or uncertain inputs.
+
+    Returns
+    -------
+    fixed : dict
+        Exact scalar inputs.
+    constraints : dict
+        Distribution-like uncertain inputs.
     """
     fixed, constraints = {}, {}
     for name, value in given.items():
@@ -72,7 +93,23 @@ def _parse_given(given):
 
 
 def _normalize_input_mode(input_mode):
-    """Validate and normalize the interpretation of uncertain inputs."""
+    """Validate and normalize the interpretation of uncertain inputs.
+
+    Parameters
+    ----------
+    input_mode : str
+        Requested input interpretation.
+
+    Returns
+    -------
+    str
+        Lower-case canonical mode.
+
+    Raises
+    ------
+    ValueError
+        If the mode is not supported.
+    """
     if not isinstance(input_mode, str):
         raise ValueError(
             f"input_mode must be one of {INPUT_MODES}, got {input_mode!r}."
@@ -92,6 +129,27 @@ def _partition_constraints(base_priors, constraints, input_mode):
     corresponding population priors. In ``likelihood`` mode, every uncertain
     input is treated as a measurement distribution and the population priors
     remain in force.
+
+    Parameters
+    ----------
+    base_priors : dict
+        Configured fundamental-parameter priors.
+    constraints : dict
+        Uncertain inputs parsed from ``given``.
+    input_mode : {'propagate', 'likelihood'}
+        Statistical interpretation of uncertain fundamental inputs.
+
+    Returns
+    -------
+    priors : dict
+        Effective priors for the current solve.
+    likelihood_terms : dict
+        Distributions evaluated as likelihood terms.
+
+    Raises
+    ------
+    TypeError
+        If a likelihood term does not provide ``logpdf``.
     """
     priors = dict(base_priors)
     likelihood_terms = {}
@@ -157,6 +215,27 @@ class Solver:
         bandpass="TESS",
         input_mode="propagate",
     ):
+        """Initialize a stellar-property solver.
+
+        Parameters
+        ----------
+        priors : dict, optional
+            Fundamental-parameter prior overrides.
+        preset : {'standard', 'fast', 'precise'}, default='standard'
+            Named Dynesty configuration.
+        nlive : int, optional
+            Number of live points overriding the preset.
+        seed : int, optional
+            Random-number generator seed.
+        sample, bound : str, optional
+            Dynesty sampling and bounding methods.
+        bootstrap, walks, update_interval : int, optional
+            Additional Dynesty settings.
+        bandpass : {'TESS', 'Kepler'}, default='TESS'
+            Photometric response used for envelope amplitudes.
+        input_mode : {'propagate', 'likelihood'}, default='propagate'
+            Statistical interpretation of uncertain fundamental inputs.
+        """
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
         self.settings = get_sampler_settings(
@@ -178,14 +257,38 @@ class Solver:
         self._last_bandpass = None
 
     def _forward(self, fundamentals, bandpass=None):
-        """Evaluate all relations for scalar or array fundamentals."""
+        """Evaluate available relations for fundamental parameters.
+
+        Parameters
+        ----------
+        fundamentals : dict
+            Scalar or array-valued fundamental parameters.
+        bandpass : {'TESS', 'Kepler'}, optional
+            Photometric response, defaulting to the solver setting.
+
+        Returns
+        -------
+        dict
+            Supplied fundamentals and available derived quantities.
+        """
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
         return evaluate_relations(fundamentals, bandpass=bandpass)
 
     def _bounds_for(self, name):
         """Best-effort bounds for a fundamental, from its prior's support --
         used to keep the point-estimate least-squares solve out of
-        unphysical territory (e.g. negative mass) mid-iteration."""
+        unphysical territory (e.g. negative mass) mid-iteration.
+
+        Parameters
+        ----------
+        name : str
+            Fundamental-parameter name.
+
+        Returns
+        -------
+        tuple of float
+            Lower and upper bounds, possibly infinite.
+        """
         prior = self.priors[name]
         if hasattr(prior, "support"):
             try:
@@ -203,6 +306,25 @@ class Solver:
         least-squares solves for the remaining fundamentals against any
         given derived-quantity targets (e.g. given exact Teff, numax, dnu
         -> solve for M, R). No sampler involved either way.
+
+        Parameters
+        ----------
+        fixed : dict
+            Exact input quantities.
+        want : sequence of str
+            Requested outputs.
+        bandpass : {'TESS', 'Kepler'}
+            Photometric response used for envelope amplitudes.
+
+        Returns
+        -------
+        dict
+            Requested point estimates.
+
+        Raises
+        ------
+        ValueError
+            If the exact inputs do not determine the requested outputs.
         """
         fixed_fund = {k: v for k, v in fixed.items() if k in FUNDAMENTAL}
         derived_targets = {k: v for k, v in fixed.items() if k in DERIVED}
@@ -228,6 +350,18 @@ class Solver:
         lo, hi = zip(*bounds)
 
         def residuals(x):
+            """Evaluate least-squares residuals for free fundamentals.
+
+            Parameters
+            ----------
+            x : ndarray
+                Trial values of the free fundamental parameters.
+
+            Returns
+            -------
+            list of float
+                Predicted minus target values for derived constraints.
+            """
             theta = dict(zip(free, x))
             theta.update(fixed_fund)
             full = self._forward(theta, bandpass=bandpass)
@@ -338,11 +472,35 @@ class Solver:
         ndim = len(free_fundamentals)
 
         def prior_transform(u):
+            """Transform a unit-cube point to fundamental parameters.
+
+            Parameters
+            ----------
+            u : ndarray
+                Unit-cube coordinates.
+
+            Returns
+            -------
+            ndarray
+                Fundamental parameters drawn from their priors.
+            """
             return np.array(
                 [priors[p].ppf(u[i]) for i, p in enumerate(free_fundamentals)]
             )
 
         def loglike(theta):
+            """Evaluate the joint log-likelihood.
+
+            Parameters
+            ----------
+            theta : ndarray
+                Free fundamental parameters.
+
+            Returns
+            -------
+            float
+                Sum of log-density terms for all uncertain constraints.
+            """
             fund = dict(zip(free_fundamentals, theta))
             fund.update(fixed_fund)
             full = self._forward(fund, bandpass=bandpass)
@@ -384,6 +542,25 @@ class Solver:
         Works for both the nested-sampling path (returns arrays, same
         length as the posterior from the last solve() call) and the
         point-estimate path (returns plain floats).
+
+        Parameters
+        ----------
+        want : str or sequence of str
+            Additional quantities to derive.
+        bandpass : {'TESS', 'Kepler'}, optional
+            Photometric response. The default reuses the previous solve.
+
+        Returns
+        -------
+        dict
+            Requested quantities evaluated for the previous result.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`solve` has not been called.
+        ValueError
+            If required fundamentals were absent from the previous problem.
         """
         if self._last_fund is None:
             raise RuntimeError(

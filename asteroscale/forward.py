@@ -9,10 +9,27 @@ def required_fundamentals(names):
     Dependencies are followed recursively through :data:`DERIVED`. The
     original order in :data:`FUNDAMENTAL` is retained for deterministic
     sampler dimensions.
+
+    Parameters
+    ----------
+    names : iterable of str
+        Fundamental or derived quantity names.
+
+    Returns
+    -------
+    list of str
+        Required fundamental names in canonical order.
     """
     required = set()
 
     def visit(name):
+        """Add the recursive dependencies of one quantity.
+
+        Parameters
+        ----------
+        name : str
+            Fundamental or derived quantity name.
+        """
         if name in FUNDAMENTAL:
             required.add(name)
         elif name in DERIVED:

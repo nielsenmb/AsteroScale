@@ -34,7 +34,20 @@ _SANITY_RANGES = {
 
 
 def validate_names(names, kind):
-    """kind: a short label for the error message, e.g. 'given' or 'want'."""
+    """Validate quantity names.
+
+    Parameters
+    ----------
+    names : iterable of str
+        Quantity names to check.
+    kind : str
+        Label used in error messages, such as ``"given"`` or ``"want"``.
+
+    Raises
+    ------
+    KeyError
+        If any quantity name is unknown.
+    """
     unknown = [n for n in names if n not in _ALL_NAMES]
     if unknown:
         raise KeyError(
@@ -56,6 +69,13 @@ def normalize_want(want):
     -------
     list of str
         Validated, expanded quantity names.
+
+    Raises
+    ------
+    ValueError
+        If the request is empty or combines ``"all"`` with other names.
+    KeyError
+        If a requested quantity is unknown.
     """
     if want == "all" or want == ["all"] or want == ("all",):
         return list(FUNDAMENTAL) + list(DERIVED)
@@ -70,7 +90,13 @@ def normalize_want(want):
 
 
 def validate_want(want):
-    """Validate requested outputs without returning the normalized list."""
+    """Validate requested outputs without returning them.
+
+    Parameters
+    ----------
+    want : str or sequence of str
+        Requested quantity names.
+    """
     normalize_want(want)
 
 
@@ -79,6 +105,21 @@ def validate_given(given):
     entries, checks physical plausibility. Custom distribution objects
     (anything with .logpdf/.ppf) are trusted as-is -- there's no generic
     way to sanity-check an arbitrary distribution's shape.
+
+    Parameters
+    ----------
+    given : dict
+        Mapping from quantity names to exact values, ``(mean, error)`` pairs,
+        or distribution-like objects.
+
+    Raises
+    ------
+    KeyError
+        If a quantity name is unknown.
+    TypeError
+        If an input has an unsupported type.
+    ValueError
+        If the mapping is empty or a numeric value is invalid.
     """
     if not given:
         raise ValueError(
@@ -110,6 +151,20 @@ def validate_given(given):
 
 
 def _check_error(name, err):
+    """Validate a Gaussian uncertainty.
+
+    Parameters
+    ----------
+    name : str
+        Quantity name used in error messages.
+    err : float
+        Standard uncertainty to validate.
+
+    Raises
+    ------
+    ValueError
+        If the uncertainty is non-finite or not positive.
+    """
     if not np.isfinite(err) or err <= 0:
         raise ValueError(
             f"given['{name}'] error must be a positive finite number, "
@@ -118,6 +173,25 @@ def _check_error(name, err):
 
 
 def _check_value(name, value):
+    """Validate the physical plausibility of an exact value.
+
+    Parameters
+    ----------
+    name : str
+        Quantity name.
+    value : float
+        Numeric value to check.
+
+    Raises
+    ------
+    ValueError
+        If the value is non-finite or violates a hard physical bound.
+
+    Warns
+    -----
+    UserWarning
+        If the value lies outside the package's generous sanity range.
+    """
     if not np.isfinite(value):
         raise ValueError(f"given['{name}'] = {value} is not finite.")
     if name in _POSITIVE and value <= 0:
@@ -146,6 +220,20 @@ def check_point_estimate_residuals(result, targets, tol=1e-3):
     satisfy the given constraints -- most likely because they're mutually
     inconsistent (no combination of the free parameters can match all of
     them at once), rather than a fixable optimizer failure.
+
+    Parameters
+    ----------
+    result : scipy.optimize.OptimizeResult
+        Result from the least-squares optimizer.
+    targets : dict
+        Mapping from constrained quantity names to target values.
+    tol : float, default=1e-3
+        Maximum residual relative to the largest target scale.
+
+    Warns
+    -----
+    UserWarning
+        If the optimized solution does not satisfy the targets.
     """
     if len(result.fun) == 0:
         return

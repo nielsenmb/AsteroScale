@@ -12,10 +12,31 @@ def solve(
     given, want, nlive=None, priors=None, seed=None, preset=None,
     input_mode=None, **solve_kwargs,
 ):
-    """One-off convenience wrapper: solve(given, want) without instantiating
-    Solver yourself. Reuses a shared default Solver unless nlive/priors/seed
-    or ``input_mode`` are given, in which case a fresh Solver is created with
-    those settings. Remaining kwargs pass through to :meth:`Solver.solve`.
+    """Solve a single stellar inference problem.
+
+    Parameters
+    ----------
+    given : dict
+        Exact values or uncertain constraints supplied to the solver.
+    want : str or sequence of str
+        Quantities to return, or ``"all"``.
+    nlive : int, optional
+        Number of Dynesty live points.
+    priors : dict, optional
+        Fundamental-parameter priors overriding the package defaults.
+    seed : int, optional
+        Seed for the random-number generator.
+    preset : {'fast', 'standard', 'precise'}, optional
+        Named sampling configuration.
+    input_mode : {'propagate', 'likelihood'}, optional
+        Statistical interpretation of uncertain fundamental inputs.
+    **solve_kwargs
+        Additional arguments passed to :meth:`Solver.solve`.
+
+    Returns
+    -------
+    dict
+        Requested point estimates or posterior samples.
     """
     global _default_solver
     if any(value is not None for value in

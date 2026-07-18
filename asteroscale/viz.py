@@ -5,9 +5,22 @@ import matplotlib.pyplot as plt
 
 
 def plot_posterior(samples, params=None, bins=40):
-    """samples: dict {name: array}, as returned by Solver.solve().
-    params: optional list of names to plot (default: all non-'_' keys).
-    Diagonal panels show histograms, off-diagonal panels show scatter.
+    """Plot marginal distributions and pairwise sample projections.
+
+    Parameters
+    ----------
+    samples : dict
+        Mapping from quantity names to sample arrays.
+    params : sequence of str, optional
+        Quantities to plot. The default includes every key not beginning
+        with an underscore.
+    bins : int, default=40
+        Number of histogram bins on diagonal panels.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        Figure containing histograms and lower-triangle scatter plots.
     """
     if params is None:
         params = [k for k in samples if not k.startswith("_")]

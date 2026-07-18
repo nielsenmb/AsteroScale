@@ -3,11 +3,16 @@ import numpy as np
 
 
 def summarize(samples, params=None):
-    """Print mean +/- std and 16/50/84th percentiles for each quantity.
+    """Print summary statistics for solver samples.
 
-    samples: dict {name: array}, as returned by Solver.solve()
-    params:  optional list of names to restrict to (default: all, skipping
-             any keys starting with '_' like '_ess' or '_results')
+    Parameters
+    ----------
+    samples : dict
+        Mapping from quantity names to sample arrays, as returned by
+        :meth:`asteroscale.Solver.solve`.
+    params : sequence of str, optional
+        Quantities to include. By default, all keys not starting with an
+        underscore are summarized.
     """
     if params is None:
         params = [k for k in samples if not k.startswith("_")]

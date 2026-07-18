@@ -10,6 +10,8 @@ asteroseismology experience. A particular target audience is exoplanet
 observers who want to understand where stellar variability may appear in a
 light curve or power spectrum.
 
+**[Read the full AsteroScale documentation](https://asteroscale.readthedocs.io/en/latest/)**
+
 ## Quick start
 
 Predict the oscillation properties of a star from its mass, radius,
@@ -73,7 +75,8 @@ python -m pip install -e .
 
 ## Documentation
 
-The documentation source is in [`docs/`](docs/index.md) and includes:
+The [hosted documentation](https://asteroscale.readthedocs.io/en/latest/)
+includes:
 
 - an introduction for exoplanet users;
 - amplitude and bandpass conventions;

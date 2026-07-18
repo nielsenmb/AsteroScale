@@ -9,6 +9,10 @@ The documentation is written for users who may have little or no prior
 experience with asteroseismology, particularly people studying exoplanet
 systems who need to understand stellar variability in their data.
 
+AsteroScale is developed openly in the
+[GitHub repository](https://github.com/nielsenmb/AsteroScale), where you can
+inspect the source, report problems, and contribute improvements.
+
 ::::{grid} 1 2 2 2
 :::{grid-item-card} Start here
 :link: getting-started
@@ -29,6 +33,13 @@ light curve or power spectrum.
 :link-type: doc
 
 Work through common use cases and comparisons with real stars.
+:::
+:::{grid-item-card} Priors and relations
+:link: tutorials/priors-and-relations
+:link-type: doc
+
+Inspect the default prior distributions and visualize how the implemented
+scaling relations vary across their inputs.
 :::
 :::{grid-item-card} API reference
 :link: reference/api
