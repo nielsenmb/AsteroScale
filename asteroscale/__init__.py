@@ -4,6 +4,7 @@ from .utils import summarize
 from .viz import plot_posterior
 from .batch import solve_many
 from .sampling import PRESETS, SamplerSettings
+from .calibration import DEFAULT_RELATION_SCATTER
 
 _default_solver = None
 
@@ -61,4 +62,5 @@ def solve(
 __all__ = [
     "Solver", "relations", "solve", "solve_many", "summarize",
     "plot_posterior", "PRESETS", "SamplerSettings", "INPUT_MODES",
+    "DEFAULT_RELATION_SCATTER",
 ]

@@ -7,12 +7,12 @@ import dynesty
 from dynesty.utils import resample_equal
 
 from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
-from .forward import evaluate_relations, required_fundamentals
+from .forward import evaluate_relations, required_fundamentals, required_relations
 from .sampling import get_sampler_settings
 from .priors import ParallaxPrior 
- 
+from .calibration import fractional_to_log_scatter, normalize_relation_scatter
 from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
-from . import validation
+from . import validation, validity
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
 # distributions, the classes in priors.py, or your own custom class (e.g.
@@ -199,6 +199,12 @@ class Solver:
     bootstrap, walks, update_interval : int, optional
         Additional Dynesty settings. The standard defaults are zero, five,
         and ``10 * nlive``, respectively.
+    relation_scatter : float or dict, optional
+        Fractional intrinsic scatter for empirical relations. A scalar applies
+        to every calibrated relation; a dictionary overrides named defaults.
+        Zero disables intrinsic scatter for a relation.
+    warn_validity : bool, default=True
+        Warn when evaluated samples leave an adopted calibration domain.
     """
 
     def __init__(
@@ -214,6 +220,8 @@ class Solver:
         update_interval=None,
         bandpass="TESS",
         input_mode="propagate",
+        relation_scatter=None,
+        warn_validity=True,
     ):
         """Initialize a stellar-property solver.
 
@@ -235,6 +243,10 @@ class Solver:
             Photometric response used for envelope amplitudes.
         input_mode : {'propagate', 'likelihood'}, default='propagate'
             Statistical interpretation of uncertain fundamental inputs.
+        relation_scatter : float or dict, optional
+            Fractional intrinsic scatter for empirical relations.
+        warn_validity : bool, default=True
+            Warn about samples outside adopted calibration domains.
         """
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
@@ -252,11 +264,17 @@ class Solver:
         self.bound = self.settings.bound
         self.bandpass = normalize_bandpass(bandpass)
         self.input_mode = _normalize_input_mode(input_mode)
+        self.relation_scatter = normalize_relation_scatter(relation_scatter)
+        self.warn_validity = bool(warn_validity)
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,
         self._last_bandpass = None
+        self._last_relation_offsets = {}
+        self._last_relation_scatter = dict(self.relation_scatter)
+        self._last_was_sampled = False
+        self.last_validity = {}
 
-    def _forward(self, fundamentals, bandpass=None):
+    def _forward(self, fundamentals, bandpass=None, relation_offsets=None):
         """Evaluate available relations for fundamental parameters.
 
         Parameters
@@ -265,6 +283,8 @@ class Solver:
             Scalar or array-valued fundamental parameters.
         bandpass : {'TESS', 'Kepler'}, optional
             Photometric response, defaulting to the solver setting.
+        relation_offsets : dict, optional
+            Natural-log calibration offsets for empirical relations.
 
         Returns
         -------
@@ -272,7 +292,159 @@ class Solver:
             Supplied fundamentals and available derived quantities.
         """
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
-        return evaluate_relations(fundamentals, bandpass=bandpass)
+        return evaluate_relations(
+            fundamentals,
+            bandpass=bandpass,
+            relation_offsets=relation_offsets,
+        )
+
+    def _active_scatter(self, names, scatter):
+        """Return active relations with nonzero intrinsic scatter.
+
+        Parameters
+        ----------
+        names : iterable of str
+            Requested or constrained quantity names.
+        scatter : dict
+            Fractional relation-scatter configuration.
+
+        Returns
+        -------
+        list of str
+            Active relation names in dependency order.
+        """
+        return [
+            name for name in required_relations(names)
+            if scatter.get(name, 0.0) > 0.0
+        ]
+
+    def _draw_relation_offsets(self, names, scatter, size=None):
+        """Draw independent natural-log relation offsets.
+
+        Parameters
+        ----------
+        names : iterable of str
+            Relation names to perturb.
+        scatter : dict
+            Fractional relation-scatter configuration.
+        size : int, optional
+            Number of offsets per relation. The default draws scalars.
+
+        Returns
+        -------
+        dict
+            Natural-log offsets keyed by relation name.
+        """
+        return {
+            name: self.rng.normal(
+                scale=fractional_to_log_scatter(scatter[name]), size=size
+            )
+            for name in names
+        }
+
+    def _store_solution(
+        self, fundamentals, full, bandpass, offsets, active_relations,
+        relation_scatter, was_sampled, warn_validity,
+    ):
+        """Store reusable state and assess calibration validity.
+
+        Parameters
+        ----------
+        fundamentals, full : dict
+            Fundamental-only and complete evaluated solution mappings.
+        bandpass : {'TESS', 'Kepler'}
+            Photometric response used by the solution.
+        offsets : dict
+            Natural-log relation offsets represented in the solution.
+        active_relations : iterable of str
+            Relations used in the current problem.
+        relation_scatter : dict
+            Scatter configuration used by the current problem.
+        was_sampled : bool
+            Whether the solution consists of posterior or predictive samples.
+        warn_validity : bool
+            Emit calibration-domain warnings when true.
+
+        Returns
+        -------
+        dict
+            Calibration-domain report.
+        """
+        self._last_fund = fundamentals
+        self._last_bandpass = bandpass
+        self._last_relation_offsets = offsets
+        self._last_relation_scatter = dict(relation_scatter)
+        self._last_was_sampled = was_sampled
+        self.last_validity = validity.assess_validity(full, active_relations)
+        if warn_validity:
+            validity.warn_outside_calibration(self.last_validity)
+        return self.last_validity
+
+    def _point_output(
+        self, fundamentals, want, derived_targets, bandpass,
+        relation_scatter, sample_relation_scatter, warn_validity,
+        return_validity,
+    ):
+        """Build output for an exact-input solution.
+
+        Parameters
+        ----------
+        fundamentals : dict
+            Solved exact fundamental parameters.
+        want : sequence of str
+            Requested output names.
+        derived_targets : dict
+            Exact derived constraints used in an inversion.
+        bandpass : {'TESS', 'Kepler'}
+            Photometric response used for envelope amplitudes.
+        relation_scatter : dict
+            Fractional relation-scatter configuration.
+        sample_relation_scatter : bool
+            Draw predictive relation offsets for direct forward calculations.
+        warn_validity : bool
+            Emit calibration-domain warnings when true.
+        return_validity : bool
+            Include validity flags in the output when true.
+
+        Returns
+        -------
+        dict
+            Central values for an exact inversion, or predictive arrays when
+            exact fundamentals are propagated through uncertain relations.
+        """
+        active_names = list(want) + list(derived_targets)
+        active_relations = required_relations(active_names)
+        scatter_relations = self._active_scatter(want, relation_scatter)
+
+        # Exact derived targets define a deterministic inversion. Supporting
+        # relation scatter there would require constrained sampling and a
+        # Jacobian, so only direct forward predictions receive scatter.
+        if sample_relation_scatter and scatter_relations and not derived_targets:
+            n = max(self.nlive, 2000)
+            fund = {
+                name: np.full(n, value) for name, value in fundamentals.items()
+            }
+            offsets = self._draw_relation_offsets(
+                scatter_relations, relation_scatter, size=n
+            )
+            full = self._forward(
+                fund, bandpass=bandpass, relation_offsets=offsets
+            )
+            was_sampled = True
+        else:
+            fund = fundamentals
+            offsets = {}
+            full = self._forward(fund, bandpass=bandpass)
+            was_sampled = False
+
+        report = self._store_solution(
+            fund, full, bandpass, offsets, active_relations,
+            relation_scatter, was_sampled, warn_validity,
+        )
+        out = {name: full[name] for name in want}
+        if return_validity:
+            out["_validity"] = report
+        return out
 
     def _bounds_for(self, name):
         """Best-effort bounds for a fundamental, from its prior's support --
@@ -299,7 +471,10 @@ class Solver:
             return (prior.low, prior.high)
         return (-np.inf, np.inf)
 
-    def _point_estimate(self, fixed, want, bandpass):
+    def _point_estimate(
+        self, fixed, want, bandpass, relation_scatter, warn_validity,
+        return_validity, sample_relation_scatter,
+    ):
         """Fast path: every given value was a plain scalar, so there's
         nothing to marginalize over. If the fixed values cover every
         fundamental, this is just a direct forward evaluation. Otherwise,
@@ -315,6 +490,14 @@ class Solver:
             Requested outputs.
         bandpass : {'TESS', 'Kepler'}
             Photometric response used for envelope amplitudes.
+        relation_scatter : dict
+            Relation-scatter configuration retained for later predictions.
+        warn_validity : bool
+            Emit calibration-domain warnings when true.
+        return_validity : bool
+            Include the validity report in the returned dictionary.
+        sample_relation_scatter : bool
+            Draw relation scatter for a direct forward prediction.
 
         Returns
         -------
@@ -332,10 +515,11 @@ class Solver:
         free = [p for p in needed if p not in fixed_fund]
 
         if not free:
-            full = self._forward(fixed_fund, bandpass=bandpass)
-            self._last_fund = fixed_fund
-            self._last_bandpass = bandpass
-            return {name: full[name] for name in want}
+            return self._point_output(
+                fixed_fund, want, derived_targets, bandpass,
+                relation_scatter, sample_relation_scatter, warn_validity,
+                return_validity,
+            )
 
         if not derived_targets:
             raise ValueError(
@@ -371,14 +555,17 @@ class Solver:
         validation.check_point_estimate_residuals(result, derived_targets)
         theta = dict(zip(free, result.x))
         theta.update(fixed_fund)
-        full = self._forward(theta, bandpass=bandpass)
-        self._last_fund = theta
-        self._last_bandpass = bandpass
-        return {name: full[name] for name in want}
+        return self._point_output(
+            theta, want, derived_targets, bandpass,
+            relation_scatter, sample_relation_scatter, warn_validity,
+            return_validity,
+        )
 
     def solve(
         self, given, want, dlogz=None, print_progress=False,
-        return_results=False, bandpass=None, input_mode=None,
+        return_results=False, return_validity=False, bandpass=None,
+        input_mode=None, relation_scatter=None, sample_relation_scatter=False,
+        warn_validity=None,
     ):
         """Infer requested quantities from exact or uncertain constraints.
 
@@ -396,12 +583,24 @@ class Solver:
             Display Dynesty progress.
         return_results : bool, default=False
             Include raw Dynesty results under ``'_results'``.
+        return_validity : bool, default=False
+            Include calibration-domain flags under ``'_validity'``. The same
+            report is always available as :attr:`last_validity`.
         bandpass : {'TESS', 'Kepler'}, optional
             Photometric response used for ``A_env``. Overrides the value
             supplied to :class:`Solver` for this call.
         input_mode : {'propagate', 'likelihood'}, optional
             Override how uncertain fundamental inputs are interpreted. See
             :class:`Solver`. Exact scalar inputs are fixed in either mode.
+        relation_scatter : float or dict, optional
+            Override fractional intrinsic scatter for this call. A scalar
+            applies to every configured relation and zero disables scatter.
+        sample_relation_scatter : bool, default=False
+            For an all-exact direct forward calculation, return predictive
+            arrays including relation scatter rather than central scalars.
+            Exact inversions remain deterministic.
+        warn_validity : bool, optional
+            Override calibration-domain warnings for this call.
 
         Returns
         -------
@@ -413,11 +612,27 @@ class Solver:
         dlogz = self.settings.dlogz if dlogz is None else dlogz
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
         input_mode = self.input_mode if input_mode is None else _normalize_input_mode(input_mode)
+        relation_scatter = normalize_relation_scatter(
+            relation_scatter, base=self.relation_scatter
+        )
+        warn_validity = self.warn_validity if warn_validity is None else bool(warn_validity)
 
         fixed, constraints = _parse_given(given)
 
         if not constraints:
-            return self._point_estimate(fixed, want, bandpass)
+            return self._point_estimate(
+                fixed, want, bandpass, relation_scatter, warn_validity,
+                return_validity, sample_relation_scatter,
+            )
+
+        exact_derived = [name for name in fixed if name in DERIVED]
+        if exact_derived:
+            raise ValueError(
+                "Exact derived constraints cannot be combined with uncertain "
+                f"inputs during sampling: {exact_derived}. Supply a positive "
+                "measurement uncertainty as a (value, uncertainty) pair, or "
+                "make every input exact for a point-estimate solve."
+            )
 
         # ``propagate`` is the calculator-style, backwards-compatible path;
         # ``likelihood`` performs Bayesian conditioning on the configured
@@ -428,24 +643,32 @@ class Solver:
         )
 
         fixed_fund = {k: v for k, v in fixed.items() if k in FUNDAMENTAL}
-        for name, target in fixed.items():
-            if name in FUNDAMENTAL:
-                continue
-            eps = max(abs(target) * 1e-3, 1e-6)
-            likelihood_terms[name] = normal(loc=target, scale=eps)
 
         active_names = list(want) + list(given)
+        active_relations = required_relations(active_names)
+        scatter_relations = self._active_scatter(active_names, relation_scatter)
+        scatter_sigmas = {
+            name: fractional_to_log_scatter(relation_scatter[name])
+            for name in scatter_relations
+        }
         needed = required_fundamentals(active_names)
         free_fundamentals = [p for p in needed if p not in fixed_fund]
 
-        if not free_fundamentals:
+        if not free_fundamentals and not scatter_relations:
             # Every fundamental was pinned exactly, even though some other
             # given value was probabilistic (e.g. a redundant/consistency
             # check) -- nothing left to sample.
             full = self._forward(fixed_fund, bandpass=bandpass)
-            self._last_fund = fixed_fund
-            self._last_bandpass = bandpass
-            return {name: full[name] for name in want}
+            report = self._store_solution(
+                fixed_fund, full, bandpass, {}, active_relations,
+                relation_scatter, False, warn_validity,
+            )
+            out = {name: full[name] for name in want}
+            if return_results:
+                out["_results"] = None
+            if return_validity:
+                out["_validity"] = report
+            return out
 
         if not likelihood_terms:
             # Every given constraint landed on a fundamental and became a
@@ -461,15 +684,25 @@ class Solver:
             fund = {p: priors[p].ppf(u[:, j]) for j, p in enumerate(free_fundamentals)}
             for k, v in fixed_fund.items():
                 fund[k] = np.full(n, v)
-            full = self._forward(fund, bandpass=bandpass)
-            self._last_fund = fund
-            self._last_bandpass = bandpass
+            offsets = self._draw_relation_offsets(
+                scatter_relations, relation_scatter, size=n
+            )
+            full = self._forward(
+                fund, bandpass=bandpass, relation_offsets=offsets
+            )
+            report = self._store_solution(
+                fund, full, bandpass, offsets, active_relations,
+                relation_scatter, True, warn_validity,
+            )
             out = {name: full[name] for name in want}
             if return_results:
                 out["_results"] = None
+            if return_validity:
+                out["_validity"] = report
             return out
 
-        ndim = len(free_fundamentals)
+        n_fundamentals = len(free_fundamentals)
+        ndim = n_fundamentals + len(scatter_relations)
 
         def prior_transform(u):
             """Transform a unit-cube point to fundamental parameters.
@@ -484,9 +717,14 @@ class Solver:
             ndarray
                 Fundamental parameters drawn from their priors.
             """
-            return np.array(
-                [priors[p].ppf(u[i]) for i, p in enumerate(free_fundamentals)]
-            )
+            fundamentals = [
+                priors[p].ppf(u[i]) for i, p in enumerate(free_fundamentals)
+            ]
+            scatter_z = [
+                normal().ppf(u[n_fundamentals + i])
+                for i, _ in enumerate(scatter_relations)
+            ]
+            return np.asarray(fundamentals + scatter_z, dtype=float)
 
         def loglike(theta):
             """Evaluate the joint log-likelihood.
@@ -494,16 +732,23 @@ class Solver:
             Parameters
             ----------
             theta : ndarray
-                Free fundamental parameters.
+                Free fundamental parameters followed by standard-normal
+                relation-scatter variables.
 
             Returns
             -------
             float
                 Sum of log-density terms for all uncertain constraints.
             """
-            fund = dict(zip(free_fundamentals, theta))
+            fund = dict(zip(free_fundamentals, theta[:n_fundamentals]))
             fund.update(fixed_fund)
-            full = self._forward(fund, bandpass=bandpass)
+            offsets = {
+                name: theta[n_fundamentals + i] * scatter_sigmas[name]
+                for i, name in enumerate(scatter_relations)
+            }
+            full = self._forward(
+                fund, bandpass=bandpass, relation_offsets=offsets
+            )
             return float(sum(dist_obj.logpdf(full[name])
                               for name, dist_obj in likelihood_terms.items()))
 
@@ -522,16 +767,26 @@ class Solver:
         fund = {p: eq_samples[:, i] for i, p in enumerate(free_fundamentals)}
         for k, v in fixed_fund.items():
             fund[k] = np.full(eq_samples.shape[0], v)
-        full = self._forward(fund, bandpass=bandpass)
-        self._last_fund = fund
-        self._last_bandpass = bandpass
+        offsets = {
+            name: eq_samples[:, n_fundamentals + i] * scatter_sigmas[name]
+            for i, name in enumerate(scatter_relations)
+        }
+        full = self._forward(
+            fund, bandpass=bandpass, relation_offsets=offsets
+        )
+        report = self._store_solution(
+            fund, full, bandpass, offsets, active_relations,
+            relation_scatter, True, warn_validity,
+        )
 
         out = {name: full[name] for name in want}
         if return_results:
             out["_results"] = results
+        if return_validity:
+            out["_validity"] = report
         return out
 
-    def predict(self, want, bandpass=None):
+    def predict(self, want, bandpass=None, return_validity=False):
         """Compute additional quantities from the posterior/point estimate
         of the last solve() call, without re-running the sampler -- e.g.
 
@@ -549,6 +804,8 @@ class Solver:
             Additional quantities to derive.
         bandpass : {'TESS', 'Kepler'}, optional
             Photometric response. The default reuses the previous solve.
+        return_validity : bool, default=False
+            Include calibration-domain flags under ``'_validity'``.
 
         Returns
         -------
@@ -578,5 +835,29 @@ class Solver:
                 f"Cannot predict {want} from the previous solve: required "
                 f"fundamentals {missing} were not part of that problem."
             )
-        full = self._forward(self._last_fund, bandpass=bandpass)
-        return {name: full[name] for name in want}
+        active_relations = required_relations(want)
+        offsets = dict(self._last_relation_offsets)
+        if self._last_was_sampled:
+            missing_scatter = [
+                name for name in active_relations
+                if self._last_relation_scatter.get(name, 0.0) > 0.0
+                and name not in offsets
+            ]
+            if missing_scatter:
+                first = np.asarray(next(iter(self._last_fund.values())))
+                size = first.shape[0] if first.ndim else None
+                offsets.update(self._draw_relation_offsets(
+                    missing_scatter, self._last_relation_scatter, size=size
+                ))
+        full = self._forward(
+            self._last_fund, bandpass=bandpass, relation_offsets=offsets
+        )
+        report = self._store_solution(
+            self._last_fund, full, bandpass, offsets, active_relations,
+            self._last_relation_scatter, self._last_was_sampled,
+            self.warn_validity,
+        )
+        out = {name: full[name] for name in want}
+        if return_validity:
+            out["_validity"] = report
+        return out

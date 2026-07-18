@@ -68,6 +68,8 @@ def solve_many(
     update_interval=None,
     bandpass="TESS",
     input_mode="propagate",
+    relation_scatter=None,
+    warn_validity=True,
     n_jobs=None,
     base_seed=0,
     show_progress=False,
@@ -96,6 +98,10 @@ def solve_many(
         Photometric response used for ``A_env``.
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs.
+    relation_scatter : float or dict, optional
+        Fractional intrinsic scatter for empirical relations.
+    warn_validity : bool, default=True
+        Warn about samples outside adopted calibration domains.
     n_jobs : int, optional
         Maximum worker processes. The default uses the available CPUs.
     base_seed : int, default=0
@@ -118,6 +124,8 @@ def solve_many(
                          update_interval=update_interval,
                          bandpass=bandpass,
                          input_mode=input_mode,
+                         relation_scatter=relation_scatter,
+                         warn_validity=warn_validity,
                         )
     
     items = list(targets.items())

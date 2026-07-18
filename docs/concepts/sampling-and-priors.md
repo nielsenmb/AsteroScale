@@ -63,3 +63,9 @@ predictions of the fundamental stellar parameters. Avoid applying a
 population prior twice: if a catalogue value is already a posterior obtained
 with a population prior, either use `propagate` or reconstruct its measurement
 likelihood before using `likelihood`.
+
+When any input is uncertain, empirical relation scatter is also marginalized
+over. See {doc}`calibration-and-scatter` for its interpretation and how to
+override or disable it. Exact derived scalars are accepted for an all-exact
+point estimate, but a sampling problem requires a positive measurement
+uncertainty.

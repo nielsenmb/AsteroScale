@@ -294,6 +294,22 @@ def normalize_bandpass(bandpass):
     return canonical
 
 
+def amplitude_red_edge(L):
+    """Return the adopted red-edge temperature of the instability strip.
+
+    Parameters
+    ----------
+    L : float or array-like
+        Luminosity in solar units.
+
+    Returns
+    -------
+    float or ndarray
+        Red-edge effective temperature in kelvin.
+    """
+    return 8907.0 * L**-0.093
+
+
 def envelope_amplitude(M, L, Teff, bandpass="TESS"):
     """Return the maximum radial-mode rms amplitude in a photometric band.
 
@@ -319,8 +335,9 @@ def envelope_amplitude(M, L, Teff, bandpass="TESS"):
         Maximum radial-mode rms amplitude in parts per million.
     """
     bandpass = normalize_bandpass(bandpass)
-    red_edge = 8907.0 * L**-0.093
+    red_edge = amplitude_red_edge(L)
     beta = 1.0 - xp.exp((Teff - red_edge) / 1250.0)
+    beta = xp.clip(beta, 0.0, 1.0)
     return _A_ENV_SUN[bandpass] * beta * (L / M) * (Teff / 5777.0) ** -2.0
 
 

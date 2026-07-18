@@ -25,3 +25,15 @@
 ```{automodule} asteroscale.sampling
 :members:
 ```
+
+## Calibration settings
+
+```{automodule} asteroscale.calibration
+:members:
+```
+
+## Calibration validity
+
+```{automodule} asteroscale.validity
+:members:
+```

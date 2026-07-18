@@ -5,6 +5,9 @@ for detailed stellar modelling or an instrument-specific noise model.
 
 - Scaling relations are approximate and may show systematic offsets for
   particular evolutionary states.
+- Default intrinsic-scatter terms prevent measurement precision from being
+  mistaken for scaling-relation accuracy, but the current terms are
+  independent and should be treated as provisional calibration floors.
 - The amplitude relations do not account for activity-related suppression,
   dilution, cadence attenuation or the observing window.
 - The metallicity corrections are calibrated over approximately
@@ -17,6 +20,8 @@ for detailed stellar modelling or an instrument-specific noise model.
   priors.
 - Tight combinations of constraints may require more live points and
   explicit convergence checks.
+- Correlated measurement likelihoods and correlated relation scatter are not
+  yet supported.
 
 Warnings about unusual values are intended to catch unit mistakes and
 extrapolation. Check the input and calibration range before suppressing them.

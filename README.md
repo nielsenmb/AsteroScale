@@ -107,6 +107,8 @@ sphinx-build -W -b html docs docs/_build/html
   transit-depth uncertainty budget.
 - Weakly constrained results may be sensitive to the default field-star
   priors.
+- Empirical relation scatter is included in uncertain calculations, but its
+  current independent calibration terms remain approximate.
 - Gaia photometric relations are approximate and unsuitable for precision
   photometry.
 

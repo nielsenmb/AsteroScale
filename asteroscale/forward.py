@@ -1,5 +1,6 @@
 """Forward-model utilities shared by optimization and sampling."""
 
+from . import relations
 from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
 
 
@@ -41,7 +42,41 @@ def required_fundamentals(names):
     return [name for name in FUNDAMENTAL if name in required]
 
 
-def evaluate_relations(fundamentals, bandpass="TESS"):
+def required_relations(names):
+    """Return derived relations required to evaluate quantity names.
+
+    Parameters
+    ----------
+    names : iterable of str
+        Fundamental or derived quantity names.
+
+    Returns
+    -------
+    list of str
+        Required derived relations in dependency order.
+    """
+    required = set()
+
+    def visit(name):
+        """Add a derived relation and its dependencies.
+
+        Parameters
+        ----------
+        name : str
+            Fundamental or derived quantity name.
+        """
+        if name not in DERIVED or name in required:
+            return
+        for argument in DERIVED[name][1]:
+            visit(argument)
+        required.add(name)
+
+    for name in names:
+        visit(name)
+    return [name for name in DERIVED if name in required]
+
+
+def evaluate_relations(fundamentals, bandpass="TESS", relation_offsets=None):
     """Evaluate all scaling relations in dependency order.
 
     Parameters
@@ -50,6 +85,9 @@ def evaluate_relations(fundamentals, bandpass="TESS"):
         Fundamental quantities, containing scalar or array values.
     bandpass : {'TESS', 'Kepler'}, default='TESS'
         Photometric response used for the oscillation-envelope amplitude.
+    relation_offsets : dict, optional
+        Additive natural-log offsets applied to named positive relations.
+        Scalar or array offsets can represent latent calibration scatter.
 
     Returns
     -------
@@ -58,10 +96,14 @@ def evaluate_relations(fundamentals, bandpass="TESS"):
         are available.
     """
     bandpass = normalize_bandpass(bandpass)
+    relation_offsets = relation_offsets or {}
     output = dict(fundamentals)
     for name, (function, arguments) in DERIVED.items():
         if not all(argument in output for argument in arguments):
             continue
         kwargs = {"bandpass": bandpass} if name == "A_env" else {}
-        output[name] = function(*(output[arg] for arg in arguments), **kwargs)
+        value = function(*(output[arg] for arg in arguments), **kwargs)
+        if name in relation_offsets:
+            value = value * relations.xp.exp(relation_offsets[name])
+        output[name] = value
     return output

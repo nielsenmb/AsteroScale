@@ -6,4 +6,5 @@
 asteroseismology-for-exoplanets
 amplitudes
 sampling-and-priors
+calibration-and-scatter
 ```
