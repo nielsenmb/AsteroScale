@@ -200,9 +200,11 @@ class Solver:
         Additional Dynesty settings. The standard defaults are zero, five,
         and ``10 * nlive``, respectively.
     relation_scatter : float or dict, optional
-        Fractional intrinsic scatter for empirical relations. A scalar applies
-        to every calibrated relation; a dictionary overrides named defaults.
-        Zero disables intrinsic scatter for a relation.
+        Fractional intrinsic scatter for empirical relations. By default,
+        scatter is disabled for the ``fast`` and ``standard`` presets and the
+        calibrated defaults are used for ``precise``. A scalar applies to
+        every calibrated relation; a dictionary overrides the named values
+        for the selected preset. Zero disables intrinsic scatter.
     warn_validity : bool, default=True
         Warn when evaluated samples leave an adopted calibration domain.
     """
@@ -244,7 +246,9 @@ class Solver:
         input_mode : {'propagate', 'likelihood'}, default='propagate'
             Statistical interpretation of uncertain fundamental inputs.
         relation_scatter : float or dict, optional
-            Fractional intrinsic scatter for empirical relations.
+            Fractional intrinsic scatter for empirical relations. The default
+            is zero for the ``fast`` and ``standard`` presets and the
+            calibrated relation scatter for ``precise``.
         warn_validity : bool, default=True
             Warn about samples outside adopted calibration domains.
         """
@@ -264,7 +268,12 @@ class Solver:
         self.bound = self.settings.bound
         self.bandpass = normalize_bandpass(bandpass)
         self.input_mode = _normalize_input_mode(input_mode)
-        self.relation_scatter = normalize_relation_scatter(relation_scatter)
+        preset_scatter = normalize_relation_scatter(
+            None if preset == "precise" else 0.0
+        )
+        self.relation_scatter = normalize_relation_scatter(
+            relation_scatter, base=preset_scatter
+        )
         self.warn_validity = bool(warn_validity)
         self.rng = np.random.default_rng(seed)
         self._last_fund = None  # fundamentals from the last solve() call,

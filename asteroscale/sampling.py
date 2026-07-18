@@ -26,11 +26,11 @@ class SamplerSettings:
     """
 
     nlive: int = 500
-    dlogz: float = 0.5
+    dlogz: float = 0.1
     sample: str = "rwalk"
     bound: str = "single"
     bootstrap: int = 0
-    walks: int = 5
+    walks: int = 10
     update_interval: Optional[int] = None
 
     def resolved(self):
@@ -41,14 +41,14 @@ class SamplerSettings:
         SamplerSettings
             Copy with ``update_interval`` resolved to an integer.
         """
-        interval = 10 * self.nlive if self.update_interval is None else self.update_interval
+        interval = 1 * self.nlive if self.update_interval is None else self.update_interval
         return replace(self, update_interval=interval)
 
 
 PRESETS = {
     "standard": SamplerSettings(),
-    "fast": SamplerSettings(nlive=200, dlogz=1.0),
-    "precise": SamplerSettings(nlive=1000, dlogz=0.1, walks=10),
+    "fast": SamplerSettings(nlive=200, dlogz=1.0, walks=5),
+    "precise": SamplerSettings(nlive=1000, dlogz=0.01, walks=20),
 }
 
 

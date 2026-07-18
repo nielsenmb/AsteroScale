@@ -99,7 +99,9 @@ def solve_many(
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs.
     relation_scatter : float or dict, optional
-        Fractional intrinsic scatter for empirical relations.
+        Fractional intrinsic scatter for empirical relations. The default is
+        zero for the ``fast`` and ``standard`` presets and the calibrated
+        relation scatter for ``precise``.
     warn_validity : bool, default=True
         Warn about samples outside adopted calibration domains.
     n_jobs : int, optional
