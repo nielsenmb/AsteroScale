@@ -37,6 +37,60 @@ DEFAULT_PRIORS = {
 }
 
 INPUT_MODES = ("propagate", "likelihood")
+LOG10_SAMPLED_FUNDAMENTALS = frozenset(("M", "R", "plx"))
+
+
+def _to_sampler_coordinate(name, value):
+    """Convert a fundamental value to its internal sampling coordinate.
+
+    Parameters
+    ----------
+    name : str
+        Fundamental-parameter name.
+    value : float or array-like
+        Value in the public physical units.
+
+    Returns
+    -------
+    float or ndarray
+        Base-10 logarithm for mass, radius, and parallax; otherwise the
+        unchanged value.
+
+    Raises
+    ------
+    ValueError
+        If a logarithmically sampled fundamental is not strictly positive.
+    """
+    if name not in LOG10_SAMPLED_FUNDAMENTALS:
+        return value
+    value = np.asarray(value)
+    if np.any(value <= 0.0):
+        raise ValueError(
+            f"The prior for {name!r} must return strictly positive values "
+            "because it is sampled internally in log10 units."
+        )
+    return np.log10(value)
+
+
+def _from_sampler_coordinate(name, value):
+    """Convert an internal sampling coordinate to public physical units.
+
+    Parameters
+    ----------
+    name : str
+        Fundamental-parameter name.
+    value : float or array-like
+        Internal sampler value.
+
+    Returns
+    -------
+    float or ndarray
+        Mass, radius, or parallax in physical units, or the unchanged value
+        for a linearly sampled fundamental.
+    """
+    if name in LOG10_SAMPLED_FUNDAMENTALS:
+        return np.power(10.0, value)
+    return value
 
 
 def _as_distribution(p):
@@ -714,7 +768,7 @@ class Solver:
         ndim = n_fundamentals + len(scatter_relations)
 
         def prior_transform(u):
-            """Transform a unit-cube point to fundamental parameters.
+            """Transform a unit-cube point to internal sampler coordinates.
 
             Parameters
             ----------
@@ -724,10 +778,13 @@ class Solver:
             Returns
             -------
             ndarray
-                Fundamental parameters drawn from their priors.
+                Free fundamentals in their sampling coordinates followed by
+                standard-normal relation-scatter variables. Mass, radius,
+                and parallax are represented by their base-10 logarithms.
             """
             fundamentals = [
-                priors[p].ppf(u[i]) for i, p in enumerate(free_fundamentals)
+                _to_sampler_coordinate(p, priors[p].ppf(u[i]))
+                for i, p in enumerate(free_fundamentals)
             ]
             scatter_z = [
                 normal().ppf(u[n_fundamentals + i])
@@ -741,15 +798,18 @@ class Solver:
             Parameters
             ----------
             theta : ndarray
-                Free fundamental parameters followed by standard-normal
-                relation-scatter variables.
+                Free fundamentals in their internal sampling coordinates,
+                followed by standard-normal relation-scatter variables.
 
             Returns
             -------
             float
                 Sum of log-density terms for all uncertain constraints.
             """
-            fund = dict(zip(free_fundamentals, theta[:n_fundamentals]))
+            fund = {
+                p: _from_sampler_coordinate(p, theta[i])
+                for i, p in enumerate(free_fundamentals)
+            }
             fund.update(fixed_fund)
             offsets = {
                 name: theta[n_fundamentals + i] * scatter_sigmas[name]
@@ -773,7 +833,16 @@ class Solver:
         weights = np.exp(results.logwt - results.logz[-1])
         eq_samples = resample_equal(results.samples, weights)
 
-        fund = {p: eq_samples[:, i] for i, p in enumerate(free_fundamentals)}
+        fund = {
+            p: _from_sampler_coordinate(p, eq_samples[:, i])
+            for i, p in enumerate(free_fundamentals)
+        }
+        # Keep the public raw-results interface in physical units even though
+        # Dynesty sampled selected fundamentals in log10 coordinates.
+        for i, p in enumerate(free_fundamentals):
+            results.samples[:, i] = _from_sampler_coordinate(
+                p, results.samples[:, i]
+            )
         for k, v in fixed_fund.items():
             fund[k] = np.full(eq_samples.shape[0], v)
         offsets = {

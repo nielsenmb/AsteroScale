@@ -4,13 +4,39 @@ import pytest
 from asteroscale import Solver
 from asteroscale.calibration import DEFAULT_RELATION_SCATTER
 from asteroscale.distributions import normal
-from asteroscale.solver import _partition_constraints
+from asteroscale.solver import (
+    LOG10_SAMPLED_FUNDAMENTALS,
+    _from_sampler_coordinate,
+    _partition_constraints,
+    _to_sampler_coordinate,
+)
 from asteroscale.forward import evaluate_relations
 from asteroscale.relations import DERIVED, FUNDAMENTAL
 from asteroscale.validation import normalize_want
 
 
 SOLAR = {"M": 1.0, "R": 1.0, "Teff": 5772.0, "plx": 100.0, "A_G": 0.0, "FeH": 0.0}
+
+
+@pytest.mark.parametrize("name", sorted(LOG10_SAMPLED_FUNDAMENTALS))
+def test_log10_sampler_coordinates_round_trip(name):
+    physical = np.array([0.5, 1.0, 10.0, 100.0])
+    internal = _to_sampler_coordinate(name, physical)
+    np.testing.assert_allclose(internal, np.log10(physical))
+    np.testing.assert_allclose(
+        _from_sampler_coordinate(name, internal), physical
+    )
+
+
+@pytest.mark.parametrize("name", sorted(LOG10_SAMPLED_FUNDAMENTALS))
+def test_log10_sampler_coordinates_reject_nonpositive_values(name):
+    with pytest.raises(ValueError, match="strictly positive"):
+        _to_sampler_coordinate(name, 0.0)
+
+
+def test_other_fundamentals_remain_linear_internally():
+    assert _to_sampler_coordinate("Teff", 5772.0) == 5772.0
+    assert _from_sampler_coordinate("FeH", -0.2) == -0.2
 
 
 def test_want_all_expands_to_every_public_quantity():
