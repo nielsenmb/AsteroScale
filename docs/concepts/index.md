@@ -3,7 +3,7 @@
 ```{toctree}
 :maxdepth: 1
 
-asteroseismology-for-exoplanets
+asteroseismology-in-a-nutshell
 amplitudes
 sampling-and-priors
 calibration-and-scatter
