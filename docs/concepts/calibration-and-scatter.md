@@ -1,46 +1,63 @@
-# Scaling relation error, calibration, and validation
+# Scaling-relation error, calibration, and validation
 
-AsteroScale separates measurement uncertainty from uncertainty in the empirical scaling relations. In any calculation using the `preset=precise` containing uncertain inputs, scaling relations are by default assigned independent log-normal scatter which captures their inability to reflect true stellar physics. 
+Measurement uncertainty and scaling-relation uncertainty are not the same.
+For example, an extremely precise $\Delta\nu$ measurement does not make the
+approximate density scaling exact. AsteroScale's `precise` preset therefore
+adds independent, multiplicative log-normal offsets to calibrated empirical
+relations when a problem is sampled. The `fast` and `standard` presets use zero
+relation scatter by default.
 
-The default fractional one-sigma scatter is:
+The calibrated fractional one-sigma values used by `precise` are:
 
 | Relation | Default scatter | Motivation |
 |---|---:|---|
-| `numax` | 2% | model-discrepancy floor for the adopted scaling relation |
-| `dnu` | 1.5% | residual uncertainty in the corrected scaling relation |
-| `A_env` | 25% | empirical spread discussed by Ball et al. (2018) |
-| `A_gran` | 14.4% | Kallinger et al. (2014) fit scatter |
-| `b_gran_low` | 10.2% | Kallinger et al. (2014) fit scatter |
-| `b_gran_high` | 8.7% | Kallinger et al. (2014) fit scatter |
+| `numax` | 2% | provisional model-discrepancy floor for the adopted scaling relation |
+| `dnu` | 1.5% | provisional residual uncertainty in the corrected scaling relation |
+| `A_env` | 25% | empirical spread discussed by [Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract) |
+| `A_gran` | 14.4% | fit scatter from [Kallinger et al. (2014)](https://ui.adsabs.harvard.edu/abs/2014A%26A...570A..41K/abstract) |
+| `b_gran_low` | 10.2% | fit scatter from Kallinger et al. (2014) |
+| `b_gran_high` | 8.7% | fit scatter from Kallinger et al. (2014) |
 
-The scatter is currently independent between relations; a future multivariate form could represent their covariance.
+The seismic values are uncertainty floors adopted by AsteroScale rather than
+published universal constants. Scatter is currently independent between
+relations; correlations between real scaling residuals are not represented.
 
-Override one or more values when constructing a solver:
+Enable or override selected values when constructing a solver:
 
 ```python
-solver = ast.Solver(relation_scatter={"numax": 0.03, "dnu": 0.02})
+solver = ast.Solver(
+    preset="standard",
+    relation_scatter={"numax": 0.03, "dnu": 0.02},
+)
 ```
 
-A value of zero makes that empirical relation more deterministic:
+Disable all relation scatter, including in `precise`, with a scalar zero:
 
 ```python
-solver = ast.Solver(relation_scatter={"numax": 0.0})
+solver = ast.Solver(preset="precise", relation_scatter=0.0)
 ```
 
-Note that due to sampling taking place some randomness is always present unless you fix the sampling seed.
+Relation scatter broadens the combinations of mass and radius compatible with
+the observations. The field-star priors then have more influence, so posterior
+means or medians need not equal the deterministic inversion. This is an
+expected consequence of the model, although the adopted scatter values remain
+provisional.
 
-For backward compatibility, a calculation in which every input is a point estimate will return the central scaling-relation values as scalars. To obtain a predictive distribution containing only relation scatter, request it explicitly:
+An all-exact forward calculation returns central values as scalars. To draw a
+predictive distribution containing relation scatter, request it explicitly:
 
 ```python
-prediction = solver.solve({"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},
-                          want=["numax", "dnu"],
-                          sample_relation_scatter=True,
-                          )
+prediction = ast.Solver(preset="precise", seed=42).solve(
+    {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},
+    want=["numax", "dnu"],
+    sample_relation_scatter=True,
+)
 ```
 
 ## Calibration-domain reports
 
-The solver checks the ranges over which the main empirical relations were calibrated. The latest report is stored on the solver:
+The solver checks whether the main empirical relations are being evaluated in
+their adopted calibration ranges. The latest report is stored on the solver:
 
 ```python
 samples = solver.solve(given, want=["M", "R"])
@@ -50,26 +67,37 @@ print(solver.last_validity)
 It can also be included in the returned dictionary:
 
 ```python
-samples = solver.solve(given, want=["M", "R"], return_validity=True)
+samples = solver.solve(
+    given,
+    want=["M", "R"],
+    return_validity=True,
+)
 print(samples["_validity"])
 ```
 
-The report records the fraction of posterior samples within each adopted domain. Warnings can be disabled with `warn_validity=False`. Evolutionary state is not a
-fundamental parameter in AsteroScale, so validity checks cannot distinguish an RGB star from a cool main-sequence star.
+For sampled calculations, the report records the fraction of posterior samples
+inside each adopted domain. A warning is a request to inspect extrapolation,
+not proof that every returned sample is unusable. Warnings can be disabled with
+`warn_validity=False` after checking the cause. AsteroScale does not sample
+evolutionary state, so a validity check cannot by itself distinguish an RGB
+star from a cool main-sequence star.
 
 ## Numerical benchmark stars
 
-The test suite compares forward predictions with independently measured properties across several evolutionary and observational regimes:
+The test suite checks forward predictions across several regimes:
 
 | Regime | Benchmark |
 |---|---|
 | Solar anchor | Sun |
 | Kepler LEGACY dwarf | 16 Cyg A |
-| Interferometric dwarf | alpha Cen A |
-| Subgiant | beta Hyi |
-| Red giant | epsilon Tau |
+| Interferometric dwarf | $\alpha$ Cen A |
+| Subgiant | $\beta$ Hyi |
+| Red giant | $\epsilon$ Tau |
 | Eclipsing-binary red giant | KIC 8410637 |
 
-These checks are not a claim that AsteroScale is accurate to the observational uncertainty of every star, but are used to test. The non-solar tests
-currently require agreement within 10% for `numax` and 7% for `dnu`. The eclipsing-binary test is especially useful because its mass and radius are
-dynamical measurements rather than quantities inferred from the same seismic scaling relations.
+These tests verify rough agreement, not precision accuracy for every star. The
+non-solar checks currently allow 10% differences in `numax` and 7% in `dnu`.
+The eclipsing-binary case is valuable because its mass and radius are dynamical
+rather than inferred from the same seismic scaling relations. Sources for the
+documented comparison stars are listed on the {doc}`../reference/references`
+page.

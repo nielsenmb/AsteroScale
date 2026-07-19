@@ -3,8 +3,8 @@
 AsteroScale is a lightweight scaling-relation tool rather than a replacement
 for detailed stellar modelling or an instrument-specific noise model.
 
-- Scaling relations are approximate and may show systematic offsets for particular evolutionary states.
-- Default intrinsic-scatter terms prevent measurement precision from being mistaken for scaling-relation accuracy, but the current terms are independent and should be treated as provisional calibration floors.
+- Scaling relations are approximate and may show systematic offsets for particular evolutionary states; AsteroScale does not fit stellar evolutionary tracks or return ages.
+- The `precise` preset's intrinsic-scatter terms prevent measurement precision from being mistaken for scaling-relation accuracy, but the current terms are independent and should be treated as provisional calibration floors. `fast` and `standard` disable them by default.
 - The amplitude relations do not account for activity-related suppression, dilution, cadence attenuation or the observing window. 
 - The metallicity corrections are calibrated over approximately `-1.0 < [Fe/H] < 0.5`.
 - Gaia bolometric corrections in the package are rough, near-solar placeholders and are unsuitable for precision photometry.
@@ -12,5 +12,6 @@ for detailed stellar modelling or an instrument-specific noise model.
 - Weakly constrained results may be sensitive to the default field-star priors.
 - Tight combinations of constraints may require more live points and explicit convergence checks.
 - Correlated measurement likelihoods and correlated relation scatter are not yet supported.
+- Mass, radius, and other inferred properties can be prior-sensitive when the available observables do not uniquely constrain the solution.
 
 Warnings about unusual values are intended to catch unit mistakes and extrapolation. Check the input and calibration range before suppressing them.

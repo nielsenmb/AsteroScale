@@ -1,46 +1,99 @@
-# Sampling, uncertainties and priors
+# Sampling, uncertainties, and priors
 
-When every supplied input is exact, AsteroScale evaluates or inverts the relations without running a sampler. However, with uncertain inputs it uses Dynesty nested sampling to propagate those uncertainties and marginalise over quantities that were not supplied.
-
-```python
-given = {"Teff": (5777, 50),
-         "numax": (3090, 30),
-         "dnu": (135.1, 0.1),}
-want = ["M", "R"]
-solver = ast.Solver()
-samples = solver.solve(given=given, want=want)
-```
-
-The default priors describe plausible field stars. Results can therefore be prior-sensitive when few or weak measurements are supplied. Supplying Gaia parallax and photometry usually provides much stronger constraints, but users should still examine broad or unexpected posteriors carefully.
-
-## Two meanings of an uncertain input
-
-AsteroScale uses two statistical interpretations for the input, set by the `input_mode` argument:
-
-- `input_mode="propagate"` (the default) treats an uncertain fundamental parameter such as `Teff=(5772, 50)` as your current knowledge of that parameter. Its distribution replaces AsteroScale's default prior and is propagated through the scaling relations. This is the calculator-style mode and is appropriate when the input is already a posterior from an external analysis, such as a Gaia catalogue product.
-- `input_mode="likelihood"` treats every uncertain input as a measurement as a new data point that updates the current knowledge of the parameter. The population priors remain in the model and the returned samples represent the true Bayesian posterior. Use this mode when the supplied uncertainties describe the measurement process rather than an already-inferred posterior. Note that this is the default setting when using the `precise` mode.
+An exact calculation and an uncertain calculation answer slightly different
+questions. When every supplied value is a plain number, AsteroScale evaluates
+or inverts the relations and returns scalar point estimates. When any supplied
+value has an uncertainty, AsteroScale uses Dynesty nested sampling and returns
+arrays of samples. A histogram of an output array approximates its probability
+distribution.
 
 ```python
-solver = ast.Solver(input_mode="likelihood")
-given = {"Teff": (5777, 50),
-         "numax": (3090, 30),
-         "dnu": (135.1, 0.1),}
-want = ["M", "R"]
-posterior = solver.solve(given=given, want=want)
+import asteroscale as ast
+
+given = {
+    "Teff": (5777, 50),
+    "FeH": (0.0, 0.05),
+    "numax": (3090, 30),
+    "dnu": (135.1, 1.0),
+}
+solver = ast.Solver(seed=42)
+samples = solver.solve(given=given, want=["M", "R"])
+ast.summarize(samples)
 ```
 
-The mode can also be overridden for one calculation:
+Each tuple is interpreted as `(mean, one-sigma uncertainty)` for an independent
+Gaussian distribution. Plain numbers are treated as exactly known. For
+asymmetric or non-Gaussian information, supply a distribution object with the
+appropriate `ppf` or `logpdf` method.
+
+## What a prior does
+
+A prior describes plausible values before the current measurements are
+applied. AsteroScale's default priors are broad distributions for field stars,
+not a stellar-evolution model. They are independent, so weak data can admit
+combinations of mass, radius, and temperature that are uncommon on a real
+Hertzsprung--Russell diagram. A narrow posterior is therefore only convincing
+when the supplied measurements genuinely constrain it.
+
+The likelihood describes how probable the measurements are for a trial star.
+Combining prior and likelihood gives a posterior. This distinction matters for
+uncertain fundamental inputs.
+
+## Two meanings of an uncertain fundamental input
+
+Set `input_mode` according to what an input distribution represents:
+
+- `input_mode="propagate"` (the default) treats an uncertain fundamental such
+  as `Teff=(5772, 50)` as your current knowledge of that parameter. It replaces
+  the default temperature prior. This calculator-style mode is useful when the
+  input is already a catalogue posterior or when you simply want to propagate
+  quoted errors through the relations.
+- `input_mode="likelihood"` treats the tuple as a new measurement likelihood.
+  The field-star prior remains in the calculation and is updated by that
+  measurement. Use this for a Bayesian analysis when the tuple describes the
+  measurement process rather than an already inferred posterior.
 
 ```python
-samples = solver.solve(given, want=["M", "R"], input_mode="propagate")
+posterior = ast.Solver(input_mode="likelihood", seed=42).solve(
+    given,
+    want=["M", "R"],
+)
 ```
 
-Plain scalar inputs remain fixed exactly in both modes. Derived quantities such as `numax` and `dnu` are always likelihood constraints because they are
-predictions of the fundamental stellar parameters. Avoid applying a population prior twice: if a catalogue value is already a posterior obtained with a population prior, either use `propagate` or reconstruct its measurement likelihood before using `likelihood`.
+The sampling preset and `input_mode` are independent: `precise` does **not**
+automatically select `likelihood`. Plain scalar inputs remain fixed in both
+modes. Derived observables such as `numax` and `dnu` are always likelihood
+constraints because the forward model predicts them from the fundamentals.
 
-When any input is uncertain, empirical relation scatter is also marginalized over. See {doc}`calibration-and-scatter` for its interpretation and how to
-override or disable it. Exact derived scalars are accepted for an all-exact point estimate, but a sampling problem requires a positive measurement
-uncertainty.
+Avoid applying a population prior twice. If a catalogue value is already a
+posterior obtained using a population prior, use `propagate` or reconstruct its
+measurement likelihood before using `likelihood`.
 
-## Priors
-Advanced users can replace individual priors with `Solver(priors={...})` and can request the raw Dynesty result using `return_results=True`.
+## Presets and relation scatter
+
+- `fast` gives a rough result with fewer live points;
+- `standard` is the default for ordinary calculations; and
+- `precise` uses more live points, a tighter stopping criterion, and the
+  package's default empirical relation-scatter terms.
+
+`fast` and `standard` use zero relation scatter unless you explicitly enable
+it. This means `precise` can return wider distributions and slightly shifted
+posterior summaries even for the same measurements. That change reflects a
+different uncertainty model, not merely a longer run. See
+{doc}`calibration-and-scatter` for details.
+
+Mass, radius, and parallax are sampled internally in base-10 logarithmic
+coordinates to make positive, correlated scales easier for Dynesty to explore.
+Inputs, priors, likelihoods, and returned arrays remain in the physical units
+listed in {doc}`../reference/quantities`.
+
+Different random seeds should give statistically compatible summaries, not
+identical samples. If conclusions change materially with the seed, increase
+the sampling accuracy and inspect the posterior shape rather than choosing the
+most convenient run.
+
+## Custom priors and raw results
+
+Advanced users can replace individual priors with `Solver(priors={...})` and
+request the raw Dynesty result with `return_results=True`. The
+{doc}`../tutorials/advanced-workflows` notebook gives worked examples.
