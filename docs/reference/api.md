@@ -54,3 +54,14 @@ the AsteroScale source code.
    :members:
    :member-order: bysource
 ```
+
+## Offline population-prior training
+
+These interfaces create portable GMM files and are not called by the solver.
+See {doc}`../development/population-prior-training` before using them.
+
+```{eval-rst}
+.. automodule:: asteroscale.training
+   :members:
+   :member-order: bysource
+```

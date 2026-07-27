@@ -57,5 +57,6 @@ getting-started
 concepts/index
 tutorials/index
 reference/index
+development/index
 limitations
 ```

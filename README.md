@@ -163,3 +163,11 @@ python -m pip install -e ".[test,docs]"
 pytest
 sphinx-build -W -b html docs docs/_build/html
 ```
+
+The repository also includes an offline `asteroscale-train-prior` command for
+normalizing population-synthesis catalogues and fitting portable,
+full-covariance Gaussian mixtures. This is preparatory infrastructure: the
+resulting model is not yet used by `Solver`. See the
+[population-prior training guide](https://asteroscale.readthedocs.io/en/latest/development/population-prior-training.html)
+for the catalogue schema, TRILEGAL adapter, weighting assumptions, and
+validation workflow.
