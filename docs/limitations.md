@@ -7,7 +7,11 @@ for detailed stellar modelling or an instrument-specific noise model.
 - The `precise` preset's intrinsic-scatter terms prevent measurement precision from being mistaken for scaling-relation accuracy, but the current terms are independent and should be treated as provisional calibration floors. `fast` and `standard` disable them by default.
 - The amplitude relations do not account for activity-related suppression, dilution, cadence attenuation or the observing window. 
 - The metallicity corrections are calibrated over approximately `-1.0 < [Fe/H] < 0.5`.
-- Gaia bolometric corrections in the package are rough, near-solar placeholders and are unsuitable for precision photometry.
+- Gaia DR3 bolometric corrections use a MARCS-based interpolation table, but
+  the photometric model currently fixes $R_V=3.1$, adopts the source grid's
+  abundance prescription, and represents remaining model uncertainty with a
+  simple 0.02 mag floor rather than a correlated atmosphere-error model. The
+  grid is not extrapolated beyond its documented domain.
 - BP-RP alone cannot independently constrain effective temperature and extinction.
 - Weakly constrained results may be sensitive to the default field-star priors.
 - Tight combinations of constraints may require more live points and explicit convergence checks.

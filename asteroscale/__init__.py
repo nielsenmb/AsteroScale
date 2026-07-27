@@ -1,4 +1,4 @@
-from .solver import INPUT_MODES, Solver
+from .solver import DEFAULT_PHOTOMETRIC_ERROR_FLOOR, INPUT_MODES, Solver
 from . import relations
 from .utils import summarize
 from .viz import plot_posterior
@@ -63,4 +63,5 @@ __all__ = [
     "Solver", "relations", "solve", "solve_many", "summarize",
     "plot_posterior", "PRESETS", "SamplerSettings", "INPUT_MODES",
     "DEFAULT_RELATION_SCATTER",
+    "DEFAULT_PHOTOMETRIC_ERROR_FLOOR",
 ]

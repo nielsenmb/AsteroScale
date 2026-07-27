@@ -126,8 +126,9 @@ sphinx-build -W -b html docs docs/_build/html
   field-star priors.
 - The `precise` preset includes provisional independent relation-scatter terms;
   `fast` and `standard` disable them by default.
-- Gaia photometric relations are approximate and unsuitable for precision
-  photometry.
+- Gaia DR3 photometry uses a compact MARCS-based bolometric-correction grid.
+  It fixes $R_V=3.1$ and uses a configurable 0.02 mag model-error floor; see
+  the documented calibration domain before precision use.
 
 See the [full limitations page](https://asteroscale.readthedocs.io/en/latest/limitations.html)
 before using results in a precision analysis.
@@ -142,6 +143,12 @@ The implemented relations draw primarily on
 [Guggenberger et al. (2016)](https://ui.adsabs.harvard.edu/abs/2016MNRAS.460.4277G/abstract),
 [Viani et al. (2017)](https://ui.adsabs.harvard.edu/abs/2017ApJ...843...11V/abstract),
 and [Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract).
+Gaia DR3 bolometric corrections and extinction conversions are derived from
+the MARCS-based synthetic photometry of
+[Casagrande & VandenBerg (2014)](https://ui.adsabs.harvard.edu/abs/2014MNRAS.444..392C/abstract),
+[Casagrande & VandenBerg (2018a)](https://ui.adsabs.harvard.edu/abs/2018MNRAS.475.5023C/abstract),
+and
+[Casagrande & VandenBerg (2018b)](https://ui.adsabs.harvard.edu/abs/2018MNRAS.479L.102C/abstract).
 The documentation contains the
 [full reference list](https://asteroscale.readthedocs.io/en/latest/reference/references.html).
 

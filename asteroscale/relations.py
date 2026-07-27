@@ -4,6 +4,8 @@ All masses/radii in solar units, Teff in K, numax/dnu in muHz.
 """
 import numpy as np
 
+from .photometry import bolometric_correction, extinction_from_ag
+
 # Array backend, swappable for a jax.jit-able forward pass:
 #   import jax.numpy as jnp
 #   from asteroscale import relations
@@ -446,108 +448,126 @@ def mbol(L):
     return MBOL_SUN - 2.5 * xp.log10(L)
 
 
-def bc_g(Teff):
-    """Rough bolometric correction for Gaia G band, linear near solar Teff.
-
-    Placeholder only -- swap in a real BC grid (e.g. MIST/Casagrande &
-    VandenBerg 2018) for anything beyond order-of-magnitude checks.
+def bc_g(Teff, logg=4.44, FeH=0.0):
+    """MARCS-based bolometric correction for the Gaia DR3 G band.
 
     Parameters
     ----------
     Teff : float or array-like
         Effective temperature in kelvin.
+    logg : float or array-like, default=4.44
+        Base-10 surface gravity with gravity in cgs units.
+    FeH : float or array-like, default=0.0
+        Metallicity in dex.
 
     Returns
     -------
     float or ndarray
-        Approximate Gaia G bolometric correction in magnitudes.
+        Gaia DR3 G-band bolometric correction in magnitudes.
+
+    Notes
+    -----
+    The packaged grid is derived from Casagrande & VandenBerg (2014, 2018a,
+    2018b). It assumes their standard alpha-enhancement prescription and
+    returns ``nan`` outside its calibration domain.
     """
-    x = (Teff - TEFF_SUN) / 1000.0
-    return -0.068 - 0.008 * x
+    return bolometric_correction(Teff, logg, FeH, "G", backend=xp)
 
 
-def bc_bp(Teff):
-    """Rough bolometric correction for Gaia BP band, linear near solar Teff.
-
-    Placeholder only, calibrated to give M_BP,sun ~ 5.03 (Mbol_sun - BC_BP =
-    4.74 - (-0.29) = 5.03), matching approximate published Gaia solar colors
-    (BP-RP_sun ~ 0.82). Swap in a real BC grid for anything more serious.
+def bc_bp(Teff, logg=4.44, FeH=0.0):
+    """MARCS-based bolometric correction for the Gaia DR3 BP band.
 
     Parameters
     ----------
     Teff : float or array-like
         Effective temperature in kelvin.
+    logg : float or array-like, default=4.44
+        Base-10 surface gravity with gravity in cgs units.
+    FeH : float or array-like, default=0.0
+        Metallicity in dex.
 
     Returns
     -------
     float or ndarray
-        Approximate Gaia BP bolometric correction in magnitudes.
+        Gaia DR3 BP-band bolometric correction in magnitudes.
+
+    Notes
+    -----
+    The packaged grid is derived from Casagrande & VandenBerg (2014, 2018a,
+    2018b). It assumes their standard alpha-enhancement prescription and
+    returns ``nan`` outside its calibration domain.
     """
-    x = (Teff - TEFF_SUN) / 1000.0
-    return -0.29 - 0.30 * x
+    return bolometric_correction(Teff, logg, FeH, "BP", backend=xp)
 
 
-def bc_rp(Teff):
-    """Rough bolometric correction for Gaia RP band, linear near solar Teff.
-
-    Placeholder only, calibrated to give M_RP,sun ~ 4.21 (Mbol_sun - BC_RP =
-    4.74 - 0.53 = 4.21), matching approximate published Gaia solar colors.
-    Swap in a real BC grid for anything more serious.
+def bc_rp(Teff, logg=4.44, FeH=0.0):
+    """MARCS-based bolometric correction for the Gaia DR3 RP band.
 
     Parameters
     ----------
     Teff : float or array-like
         Effective temperature in kelvin.
+    logg : float or array-like, default=4.44
+        Base-10 surface gravity with gravity in cgs units.
+    FeH : float or array-like, default=0.0
+        Metallicity in dex.
 
     Returns
     -------
     float or ndarray
-        Approximate Gaia RP bolometric correction in magnitudes.
+        Gaia DR3 RP-band bolometric correction in magnitudes.
+
+    Notes
+    -----
+    The packaged grid is derived from Casagrande & VandenBerg (2014, 2018a,
+    2018b). It assumes their standard alpha-enhancement prescription and
+    returns ``nan`` outside its calibration domain.
     """
-    x = (Teff - TEFF_SUN) / 1000.0
-    return 0.53 + 0.15 * x
+    return bolometric_correction(Teff, logg, FeH, "RP", backend=xp)
 
 
-# Gaia DR2 extinction coefficients (Danielski et al. 2018), roughly constant
-# for G2V-like SEDs; A_0 here stands in for a monochromatic ~550nm
-# extinction, estimated back out from A_G. Fine for back-of-envelope
-# reddening; the true coefficients have some Teff/extinction dependence
-# this ignores.
-_A_G_OVER_A0 = 0.789
-_A_BP_OVER_A0 = 1.002
-_A_RP_OVER_A0 = 0.589
-
-
-def a_bp(A_G):
-    """Convert Gaia G extinction to approximate BP extinction.
+def a_bp(A_G, Teff=TEFF_SUN, logg=4.44, FeH=0.0):
+    """Convert Gaia G extinction to Gaia DR3 BP extinction.
 
     Parameters
     ----------
     A_G : float or array-like
         Gaia G-band extinction in magnitudes.
+    Teff : float or array-like, default=5772
+        Effective temperature in kelvin.
+    logg : float or array-like, default=4.44
+        Base-10 surface gravity with gravity in cgs units.
+    FeH : float or array-like, default=0.0
+        Metallicity in dex.
 
     Returns
     -------
     float or ndarray
-        Approximate Gaia BP extinction in magnitudes.
+        Gaia DR3 BP extinction in magnitudes.
     """
-    return (_A_BP_OVER_A0 / _A_G_OVER_A0) * A_G
+    return extinction_from_ag(A_G, Teff, logg, FeH, "BP", backend=xp)
 
 
-def a_rp(A_G):
-    """Convert Gaia G extinction to approximate RP extinction.
+def a_rp(A_G, Teff=TEFF_SUN, logg=4.44, FeH=0.0):
+    """Convert Gaia G extinction to Gaia DR3 RP extinction.
 
     Parameters
     ----------
     A_G : float or array-like
         Gaia G-band extinction in magnitudes.
+    Teff : float or array-like, default=5772
+        Effective temperature in kelvin.
+    logg : float or array-like, default=4.44
+        Base-10 surface gravity with gravity in cgs units.
+    FeH : float or array-like, default=0.0
+        Metallicity in dex.
 
     Returns
     -------
     float or ndarray
-        Approximate Gaia RP extinction in magnitudes.
+        Gaia DR3 RP extinction in magnitudes.
     """
-    return (_A_RP_OVER_A0 / _A_G_OVER_A0) * A_G
+    return extinction_from_ag(A_G, Teff, logg, FeH, "RP", backend=xp)
 
 
 def bp_rp_color(BP_mag, RP_mag):
@@ -622,11 +642,11 @@ DERIVED = {
     "b_gran_high": (granulation_frequency_high, ("numax",)),
     "d": (distance, ("plx",)),
     "Mbol": (mbol, ("L",)),
-    "BC_G": (bc_g, ("Teff",)),
-    "BC_BP": (bc_bp, ("Teff",)),
-    "BC_RP": (bc_rp, ("Teff",)),
-    "A_BP": (a_bp, ("A_G",)),
-    "A_RP": (a_rp, ("A_G",)),
+    "BC_G": (bc_g, ("Teff", "logg", "FeH")),
+    "BC_BP": (bc_bp, ("Teff", "logg", "FeH")),
+    "BC_RP": (bc_rp, ("Teff", "logg", "FeH")),
+    "A_BP": (a_bp, ("A_G", "Teff", "logg", "FeH")),
+    "A_RP": (a_rp, ("A_G", "Teff", "logg", "FeH")),
     "M_G": (abs_g_mag, ("Mbol", "BC_G")),
     "M_BP": (abs_g_mag, ("Mbol", "BC_BP")),
     "M_RP": (abs_g_mag, ("Mbol", "BC_RP")),

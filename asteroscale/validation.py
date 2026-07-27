@@ -26,7 +26,7 @@ _SANITY_RANGES = {
     "FeH": (-2.5, 0.75),
     "M": (0.1, 10.0),
     "R": (0.1, 100.0),
-    "A_G": (0.0, 5.0),
+    "A_G": (0.0, 1.5),
     "numax": (0.1, 5000.0),
     "dnu": (0.1, 300.0),
     "plx": (0.001, 800.0),  # Proxima Centauri, the closest star, is ~768 mas

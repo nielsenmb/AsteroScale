@@ -38,6 +38,66 @@ DEFAULT_PRIORS = {
 
 INPUT_MODES = ("propagate", "likelihood")
 LOG10_SAMPLED_FUNDAMENTALS = frozenset(("M", "R", "plx"))
+DEFAULT_PHOTOMETRIC_ERROR_FLOOR = 0.02
+PHOTOMETRIC_MAGNITUDES = frozenset(
+    ("M_G", "M_BP", "M_RP", "G_mag", "BP_mag", "RP_mag", "BP_RP")
+)
+
+
+def _normalize_photometric_error_floor(value):
+    """Validate a synthetic-photometry error floor.
+
+    Parameters
+    ----------
+    value : float
+        Model-error floor in magnitudes.
+
+    Returns
+    -------
+    float
+        Validated non-negative finite floor.
+
+    Raises
+    ------
+    ValueError
+        If the floor is negative or non-finite.
+    """
+    value = float(value)
+    if not np.isfinite(value) or value < 0.0:
+        raise ValueError(
+            "photometric_error_floor must be finite and non-negative, "
+            f"got {value!r}."
+        )
+    return value
+
+
+def _apply_photometric_error_floor(given, floor):
+    """Add model uncertainty in quadrature to Gaussian magnitude inputs.
+
+    Custom distribution objects are left unchanged because their scale cannot
+    be modified generically.
+
+    Parameters
+    ----------
+    given : dict
+        Exact and uncertain constraints.
+    floor : float
+        Error floor in magnitudes.
+
+    Returns
+    -------
+    dict
+        Copy with adjusted ``(mean, error)`` magnitude constraints.
+    """
+    if floor == 0.0:
+        return given
+    adjusted = dict(given)
+    for name in PHOTOMETRIC_MAGNITUDES & given.keys():
+        value = given[name]
+        if isinstance(value, tuple) and len(value) == 2:
+            mean, error = value
+            adjusted[name] = (mean, float(np.hypot(error, floor)))
+    return adjusted
 
 
 def _to_sampler_coordinate(name, value):
@@ -251,14 +311,18 @@ class Solver:
     sample, bound : str, optional
         Dynesty sampling and bounding methods.
     bootstrap, walks, update_interval : int, optional
-        Additional Dynesty settings. The standard defaults are zero, five,
-        and ``10 * nlive``, respectively.
+        Additional Dynesty settings. The standard defaults are zero, ten,
+        and ``nlive``, respectively.
     relation_scatter : float or dict, optional
         Fractional intrinsic scatter for empirical relations. By default,
         scatter is disabled for the ``fast`` and ``standard`` presets and the
         calibrated defaults are used for ``precise``. A scalar applies to
         every calibrated relation; a dictionary overrides the named values
         for the selected preset. Zero disables intrinsic scatter.
+    photometric_error_floor : float, default=0.02
+        Synthetic-photometry model uncertainty in magnitudes, added in
+        quadrature to ``(value, uncertainty)`` magnitude constraints. Set to
+        zero to disable. Custom distribution inputs are not altered.
     warn_validity : bool, default=True
         Warn when evaluated samples leave an adopted calibration domain.
     """
@@ -277,6 +341,7 @@ class Solver:
         bandpass="TESS",
         input_mode="propagate",
         relation_scatter=None,
+        photometric_error_floor=DEFAULT_PHOTOMETRIC_ERROR_FLOOR,
         warn_validity=True,
     ):
         """Initialize a stellar-property solver.
@@ -303,6 +368,9 @@ class Solver:
             Fractional intrinsic scatter for empirical relations. The default
             is zero for the ``fast`` and ``standard`` presets and the
             calibrated relation scatter for ``precise``.
+        photometric_error_floor : float, default=0.02
+            Synthetic-photometry model uncertainty in magnitudes, added in
+            quadrature to Gaussian magnitude constraints.
         warn_validity : bool, default=True
             Warn about samples outside adopted calibration domains.
         """
@@ -327,6 +395,9 @@ class Solver:
         )
         self.relation_scatter = normalize_relation_scatter(
             relation_scatter, base=preset_scatter
+        )
+        self.photometric_error_floor = _normalize_photometric_error_floor(
+            photometric_error_floor
         )
         self.warn_validity = bool(warn_validity)
         self.rng = np.random.default_rng(seed)
@@ -628,7 +699,7 @@ class Solver:
         self, given, want, dlogz=None, print_progress=False,
         return_results=False, return_validity=False, bandpass=None,
         input_mode=None, relation_scatter=None, sample_relation_scatter=False,
-        warn_validity=None,
+        photometric_error_floor=None, warn_validity=None,
     ):
         """Infer requested quantities from exact or uncertain constraints.
 
@@ -662,6 +733,9 @@ class Solver:
             For an all-exact direct forward calculation, return predictive
             arrays including relation scatter rather than central scalars.
             Exact inversions remain deterministic.
+        photometric_error_floor : float, optional
+            Override the synthetic-photometry error floor in magnitudes for
+            Gaussian magnitude constraints. Zero disables it.
         warn_validity : bool, optional
             Override calibration-domain warnings for this call.
 
@@ -671,6 +745,14 @@ class Solver:
             Requested point estimates or posterior arrays.
         """
         validation.validate_given(given)
+        photometric_error_floor = (
+            self.photometric_error_floor
+            if photometric_error_floor is None
+            else _normalize_photometric_error_floor(photometric_error_floor)
+        )
+        given = _apply_photometric_error_floor(
+            given, photometric_error_floor
+        )
         want = validation.normalize_want(want)
         dlogz = self.settings.dlogz if dlogz is None else dlogz
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
@@ -818,8 +900,11 @@ class Solver:
             full = self._forward(
                 fund, bandpass=bandpass, relation_offsets=offsets
             )
+            predictions = [full[name] for name in likelihood_terms]
+            if not all(np.all(np.isfinite(value)) for value in predictions):
+                return -np.inf
             return float(sum(dist_obj.logpdf(full[name])
-                              for name, dist_obj in likelihood_terms.items()))
+                             for name, dist_obj in likelihood_terms.items()))
 
         sampler = dynesty.NestedSampler(
             loglike, prior_transform, ndim, nlive=self.nlive, rstate=self.rng,

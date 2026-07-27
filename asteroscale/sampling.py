@@ -22,7 +22,7 @@ class SamplerSettings:
         Number of random-walk steps per proposal.
     update_interval : int or None
         Number of likelihood calls between bound updates. If ``None``, it
-        is set to ten times ``nlive``.
+        is set equal to ``nlive``.
     """
 
     nlive: int = 500
@@ -41,7 +41,7 @@ class SamplerSettings:
         SamplerSettings
             Copy with ``update_interval`` resolved to an integer.
         """
-        interval = 1 * self.nlive if self.update_interval is None else self.update_interval
+        interval = self.nlive if self.update_interval is None else self.update_interval
         return replace(self, update_interval=interval)
 
 

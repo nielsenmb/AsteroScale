@@ -37,11 +37,11 @@ $1\,\mathrm{\mu Hz}=10^{-6}\,\mathrm{Hz}$.
 | `b_gran_high` | Higher granulation characteristic frequency | $\mathrm{\mu Hz}$ | `numax` |
 | `d` | Distance | pc | `plx` |
 | `Mbol` | Absolute bolometric magnitude | mag | `L` |
-| `BC_G` | Approximate Gaia G bolometric correction | mag | `Teff` |
-| `BC_BP` | Approximate Gaia BP bolometric correction | mag | `Teff` |
-| `BC_RP` | Approximate Gaia RP bolometric correction | mag | `Teff` |
-| `A_BP` | Approximate Gaia BP extinction | mag | `A_G` |
-| `A_RP` | Approximate Gaia RP extinction | mag | `A_G` |
+| `BC_G` | MARCS-based Gaia DR3 G bolometric correction | mag | `Teff`, `logg`, `FeH` |
+| `BC_BP` | MARCS-based Gaia DR3 BP bolometric correction | mag | `Teff`, `logg`, `FeH` |
+| `BC_RP` | MARCS-based Gaia DR3 RP bolometric correction | mag | `Teff`, `logg`, `FeH` |
+| `A_BP` | MARCS-based Gaia DR3 BP extinction | mag | `A_G`, `Teff`, `logg`, `FeH` |
+| `A_RP` | MARCS-based Gaia DR3 RP extinction | mag | `A_G`, `Teff`, `logg`, `FeH` |
 | `M_G` | Absolute Gaia G magnitude | mag | `Mbol`, `BC_G` |
 | `M_BP` | Absolute Gaia BP magnitude | mag | `Mbol`, `BC_BP` |
 | `M_RP` | Absolute Gaia RP magnitude | mag | `Mbol`, `BC_RP` |
@@ -50,9 +50,10 @@ $1\,\mathrm{\mu Hz}=10^{-6}\,\mathrm{Hz}$.
 | `RP_mag` | Apparent Gaia RP magnitude | mag | `M_RP`, `d`, `A_RP` |
 | `BP_RP` | Gaia BP-RP colour | mag | `BP_mag`, `RP_mag` |
 
-The Gaia bolometric corrections and extinction conversions are deliberately
-rough, near-solar placeholders. They demonstrate how Gaia-like constraints can
-enter a calculation but should not be used for precision photometric inference.
+The Gaia quantities use a compact interpolation table derived from the
+MARCS-based synthetic photometry of Casagrande & VandenBerg. See
+{doc}`../concepts/gaia-photometry` for its assumptions, calibration domain,
+citations, and accuracy limitations.
 
 Use `want="all"` to return every available quantity whose dependencies are
 part of the current problem. See {mod}`asteroscale.relations` for the relation
