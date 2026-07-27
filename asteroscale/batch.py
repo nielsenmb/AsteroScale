@@ -69,6 +69,7 @@ def solve_many(
     bandpass="TESS",
     input_mode="propagate",
     relation_scatter=None,
+    photometric_error_floor=0.02,
     warn_validity=True,
     n_jobs=None,
     base_seed=0,
@@ -102,6 +103,9 @@ def solve_many(
         Fractional intrinsic scatter for empirical relations. The default is
         zero for the ``fast`` and ``standard`` presets and the calibrated
         relation scatter for ``precise``.
+    photometric_error_floor : float, default=0.02
+        Synthetic-photometry model uncertainty in magnitudes, added in
+        quadrature to Gaussian magnitude constraints.
     warn_validity : bool, default=True
         Warn about samples outside adopted calibration domains.
     n_jobs : int, optional
@@ -127,6 +131,7 @@ def solve_many(
                          bandpass=bandpass,
                          input_mode=input_mode,
                          relation_scatter=relation_scatter,
+                         photometric_error_floor=photometric_error_floor,
                          warn_validity=warn_validity,
                         )
     

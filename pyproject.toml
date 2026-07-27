@@ -18,6 +18,9 @@ docs = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.setuptools.package-data]
+asteroscale = ["data/*.npz", "data/*.md"]
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"

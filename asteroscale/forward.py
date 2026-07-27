@@ -1,6 +1,7 @@
 """Forward-model utilities shared by optimization and sampling."""
 
 from . import relations
+from .photometry import bolometric_corrections, extinctions_from_ag
 from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
 
 
@@ -99,7 +100,25 @@ def evaluate_relations(fundamentals, bandpass="TESS", relation_offsets=None):
     relation_offsets = relation_offsets or {}
     output = dict(fundamentals)
     for name, (function, arguments) in DERIVED.items():
+        if name in output:
+            continue
         if not all(argument in output for argument in arguments):
+            continue
+        if name == "BC_G":
+            values = bolometric_corrections(
+                output["Teff"], output["logg"], output["FeH"],
+                backend=relations.xp,
+            )
+            output["BC_G"], output["BC_BP"], output["BC_RP"] = (
+                values[..., 0], values[..., 1], values[..., 2]
+            )
+            continue
+        if name == "A_BP":
+            values = extinctions_from_ag(
+                output["A_G"], output["Teff"], output["logg"], output["FeH"],
+                backend=relations.xp,
+            )
+            output["A_BP"], output["A_RP"] = values[..., 0], values[..., 1]
             continue
         kwargs = {"bandpass": bandpass} if name == "A_env" else {}
         value = function(*(output[arg] for arg in arguments), **kwargs)

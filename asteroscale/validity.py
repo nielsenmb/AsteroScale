@@ -4,6 +4,7 @@ import warnings
 
 import numpy as np
 
+from .photometry import MARCS_DOMAIN
 from .relations import amplitude_red_edge
 
 
@@ -103,6 +104,43 @@ def assess_validity(values, active_names):
             valid,
             "Teff below the adopted red edge of the delta-Scuti instability strip",
         )
+
+    photometric = {
+        "BC_G", "BC_BP", "BC_RP", "A_BP", "A_RP",
+        "M_G", "M_BP", "M_RP", "G_mag", "BP_mag", "RP_mag", "BP_RP",
+    }
+    if active & photometric and all(
+        name in values for name in ("Teff", "logg", "FeH")
+    ):
+        valid = (
+            (np.asarray(values["Teff"]) >= MARCS_DOMAIN["Teff"][0])
+            & (np.asarray(values["Teff"]) <= MARCS_DOMAIN["Teff"][1])
+            & (np.asarray(values["logg"]) >= MARCS_DOMAIN["logg"][0])
+            & (np.asarray(values["logg"]) <= MARCS_DOMAIN["logg"][1])
+            & (np.asarray(values["FeH"]) >= MARCS_DOMAIN["FeH"][0])
+            & (np.asarray(values["FeH"]) <= MARCS_DOMAIN["FeH"][1])
+        )
+        extinction_active = bool(active & {"A_BP", "A_RP", "BP_mag", "RP_mag", "BP_RP"})
+        if extinction_active and "A_G" in values:
+            valid = (
+                valid
+                & (np.asarray(values["A_G"]) >= MARCS_DOMAIN["A_G"][0])
+                & (np.asarray(values["A_G"]) <= MARCS_DOMAIN["A_G"][1])
+            )
+        domain = (
+            f"{MARCS_DOMAIN['Teff'][0]:.0f} <= Teff/K <= "
+            f"{MARCS_DOMAIN['Teff'][1]:.0f}, "
+            f"{MARCS_DOMAIN['logg'][0]:.1f} <= logg <= "
+            f"{MARCS_DOMAIN['logg'][1]:.1f}, "
+            f"{MARCS_DOMAIN['FeH'][0]:.1f} <= [Fe/H] <= "
+            f"{MARCS_DOMAIN['FeH'][1]:.1f}"
+        )
+        if extinction_active:
+            domain += (
+                f", {MARCS_DOMAIN['A_G'][0]:.1f} <= A_G/mag <= "
+                f"{MARCS_DOMAIN['A_G'][1]:.1f}"
+            )
+        report["Gaia_photometry"] = _entry(valid, domain)
     return report
 
 

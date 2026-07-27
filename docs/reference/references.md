@@ -17,6 +17,15 @@ used by each function.
 - [Viani et al. (2017), *Changing the $\nu_{\max}$ Scaling Relation: The Need for a Mean Molecular Weight Term*](https://ui.adsabs.harvard.edu/abs/2017ApJ...843...11V/abstract)
 - [Ball et al. (2018), *A Synthetic Sample of Short-cadence Solar-like Oscillators for TESS*](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract)
 
+## Gaia synthetic photometry
+
+AsteroScale's Gaia DR3 bolometric corrections and extinction conversions are
+derived from the MARCS-based tables accompanying:
+
+- [Casagrande & VandenBerg (2014), *Synthetic Stellar Photometry - I. General considerations and new transformations for broad-band systems*](https://ui.adsabs.harvard.edu/abs/2014MNRAS.444..392C/abstract)
+- [Casagrande & VandenBerg (2018a), *Synthetic stellar photometry - II. Testing the bolometric flux scale and tables of bolometric corrections for the Hipparcos/Tycho, Pan-STARRS1, SkyMapper, and JWST systems*](https://ui.adsabs.harvard.edu/abs/2018MNRAS.475.5023C/abstract)
+- [Casagrande & VandenBerg (2018b), *On the use of Gaia magnitudes and new tables of bolometric corrections*](https://ui.adsabs.harvard.edu/abs/2018MNRAS.479L.102C/abstract)
+
 ## Sources used in the real-star tutorial
 
 - [Kjeldsen et al. (2005), oscillations in $\alpha$ Centauri A](https://ui.adsabs.harvard.edu/abs/2005ApJ...635.1281K/abstract)
