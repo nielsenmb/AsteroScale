@@ -1,7 +1,8 @@
-"""Offline tools for building portable stellar-population priors.
+"""Tools for building and representing portable stellar-population priors.
 
-This subpackage is deliberately separate from AsteroScale's inference path.
-Importing or using AsteroScale does not train or load a population model.
+Fitting remains an explicitly offline operation. The lightweight
+``PopulationGMM`` container and transform are also reused when a saved model
+is selected for inference.
 """
 
 from .catalogue import (
@@ -10,11 +11,17 @@ from .catalogue import (
     read_trilegal,
     write_standard_catalogue,
 )
-from .gmm import PopulationGMM, fit_candidate_models, fit_weighted_gmm
+from .gmm import (
+    PopulationGMM,
+    PopulationPriorTransform,
+    fit_candidate_models,
+    fit_weighted_gmm,
+)
 
 __all__ = [
     "PopulationCatalogue",
     "PopulationGMM",
+    "PopulationPriorTransform",
     "fit_candidate_models",
     "fit_weighted_gmm",
     "read_standard_catalogue",

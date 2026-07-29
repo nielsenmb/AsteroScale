@@ -22,7 +22,12 @@ asteroscale-train-prior = "asteroscale.training.cli:main"
 testpaths = ["tests"]
 
 [tool.setuptools.package-data]
-asteroscale = ["data/*.npz", "data/*.md"]
+asteroscale = [
+    "data/*.npz",
+    "data/*.md",
+    "data/population_models/*.npz",
+    "data/population_models/*.json",
+]
 
 [build-system]
 requires = ["setuptools>=61"]

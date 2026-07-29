@@ -14,6 +14,10 @@ for detailed stellar modelling or an instrument-specific noise model.
   grid is not extrapolated beyond its documented domain.
 - BP-RP alone cannot independently constrain effective temperature and extinction.
 - Weakly constrained results may be sensitive to the default field-star priors.
+- The optional correlated population prior inherits TRILEGAL's Galactic
+  population assumptions and the training catalogue's cuts. Its Gaussian
+  components can assign some density between narrow stellar sequences, and it
+  does not include a survey or oscillation-detection selection function.
 - Tight combinations of constraints may require more live points and explicit convergence checks.
 - Correlated measurement likelihoods and correlated relation scatter are not yet supported.
 - Mass, radius, and other inferred properties can be prior-sensitive when the available observables do not uniquely constrain the solution.

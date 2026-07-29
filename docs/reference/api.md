@@ -55,10 +55,17 @@ the AsteroScale source code.
    :member-order: bysource
 ```
 
-## Offline population-prior training
+## Population priors
 
-These interfaces create portable GMM files and are not called by the solver.
-See {doc}`../development/population-prior-training` before using them.
+Runtime helpers load portable GMM priors, while the training interfaces create
+them from population-synthesis catalogues. See
+{doc}`../development/population-prior-training` before using a custom model.
+
+```{eval-rst}
+.. automodule:: asteroscale.population
+   :members:
+   :member-order: bysource
+```
 
 ```{eval-rst}
 .. automodule:: asteroscale.training
