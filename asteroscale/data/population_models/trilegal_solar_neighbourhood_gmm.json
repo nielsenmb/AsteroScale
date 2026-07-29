@@ -1,0 +1,133 @@
+{
+  "candidate_results": [
+    {
+      "bic": -292917.546011035,
+      "n_components": 8,
+      "validation_mean_log_density": 8.806185752934963
+    },
+    {
+      "bic": -315822.42890641926,
+      "n_components": 16,
+      "validation_mean_log_density": 9.508056775201227
+    },
+    {
+      "bic": -329072.8784808258,
+      "n_components": 32,
+      "validation_mean_log_density": 9.977949469555066
+    },
+    {
+      "bic": -333771.378287427,
+      "n_components": 64,
+      "validation_mean_log_density": 10.217895469114508
+    },
+    {
+      "bic": -332327.8535812417,
+      "n_components": 128,
+      "validation_mean_log_density": 10.385219253560047
+    },
+    {
+      "bic": -323527.43874482915,
+      "n_components": 256,
+      "validation_mean_log_density": 10.453064883335152
+    }
+  ],
+  "metadata": {
+    "catalogue": {
+      "adapter": "trilegal",
+      "max_distance_pc": 1000.0,
+      "metallicity_interpretation": "mh",
+      "sources": [
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l135b+41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l135b-41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l180b+0.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l225b+41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l225b-41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l270b+0.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l315b+41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l315b-41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l45b+41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l45b-41.81.dat",
+        "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l90b+0.dat"
+      ],
+      "teff_range": [
+        3500.0,
+        8000.0
+      ]
+    },
+    "effective_sample_size": 20913.0,
+    "em_iterations": 363,
+    "generation": {
+      "av_at_infinity_mag": 0.0,
+      "binary_fraction": 0.3,
+      "binary_output_representation": "VERIFY FROM SUBMITTED FORM",
+      "field_area_deg2": 10.0,
+      "limiting_magnitude_first_filter": 20.0,
+      "metallicity_note": "TRILEGAL [M/H] stored in the feh coordinate",
+      "n_fields": 11,
+      "photometric_system": "Gaia EDR3 (Vega)",
+      "synthesis_code": "TRILEGAL",
+      "version": "1.6"
+    },
+    "n_components": 256,
+    "n_training_rows": 20913,
+    "random_state": 2026,
+    "selection": {
+      "candidate_results": [
+        {
+          "bic": -292917.546011035,
+          "n_components": 8,
+          "validation_mean_log_density": 8.806185752934963
+        },
+        {
+          "bic": -315822.42890641926,
+          "n_components": 16,
+          "validation_mean_log_density": 9.508056775201227
+        },
+        {
+          "bic": -329072.8784808258,
+          "n_components": 32,
+          "validation_mean_log_density": 9.977949469555066
+        },
+        {
+          "bic": -333771.378287427,
+          "n_components": 64,
+          "validation_mean_log_density": 10.217895469114508
+        },
+        {
+          "bic": -332327.8535812417,
+          "n_components": 128,
+          "validation_mean_log_density": 10.385219253560047
+        },
+        {
+          "bic": -323527.43874482915,
+          "n_components": 256,
+          "validation_mean_log_density": 10.453064883335152
+        }
+      ],
+      "selection_tolerance": 0.01,
+      "validation_fraction": 0.2
+    },
+    "training_mean_log_density_standardized": 4.206641500873766
+  },
+  "model_path": "/home/ADF/nielsemb/work/repos/AsteroScale/population_models/trilegal_solar_neighbourhood_gmm.npz",
+  "n_catalogue_rows": 20913,
+  "selected_components": 256,
+  "support_bounds": [
+    [
+      -0.9625735020593764,
+      0.5731037831639911
+    ],
+    [
+      -0.9353473551570868,
+      1.9811526448429129
+    ],
+    [
+      3.545,
+      3.903
+    ],
+    [
+      -3.19,
+      0.57
+    ]
+  ]
+}
