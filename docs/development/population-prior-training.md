@@ -1,15 +1,14 @@
 # Training a stellar-population prior
 
-AsteroScale's current default priors treat mass, radius, effective temperature,
-and metallicity independently. That is intentionally broad, but it permits
+AsteroScale's default priors treat mass, radius, effective temperature, and
+metallicity independently. That is intentionally broad, but it permits
 combinations that are rare in a real stellar population. The offline training
 tools introduced here compress a population-synthesis catalogue into a
 multivariate Gaussian mixture model (GMM).
 
-This is preparatory infrastructure. The saved GMM is **not yet used by
-`Solver`**, so training one does not change an AsteroScale result. Runtime
-loading and conditional sampling will be added after a real synthesis
-catalogue has been validated.
+The saved GMM can be passed to `Solver` as an opt-in correlated prior for
+likelihood-based inference. Training a model does not change the package
+defaults or the behavior of calculator-style uncertainty propagation.
 
 ## What the mixture represents
 
@@ -159,6 +158,36 @@ The compressed NPZ contains no Python objects and can be loaded with
 
 The model file is usually small enough to package with AsteroScale. The full
 population catalogue and fitting dependencies will not be needed at runtime.
+
+## Using a trained model
+
+Pass either the bundled model name or an NPZ path:
+
+```python
+import asteroscale as ast
+
+solver = ast.Solver(
+    preset="precise",
+    input_mode="likelihood",
+    population_prior="/path/to/population_gmm.npz",
+)
+
+posterior = solver.solve(
+    {
+        "Teff": (5772.0, 80.0),
+        "FeH": (0.0, 0.1),
+        "numax": (2200.0, 50.0),
+        "dnu": (105.0, 0.5),
+    },
+    want=["M", "R"],
+)
+```
+
+The runtime transform draws the required population coordinates jointly.
+Exact population parameters condition the mixture, while unused coordinates
+are marginalized. The correlated prior is ignored in `propagate` mode, which
+retains the independent one-dimensional priors. See
+{doc}`../concepts/sampling-and-priors` for the statistical distinction.
 
 ## Proposed first TRILEGAL population
 

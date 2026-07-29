@@ -69,6 +69,57 @@ Avoid applying a population prior twice. If a catalogue value is already a
 posterior obtained using a population prior, use `propagate` or reconstruct its
 measurement likelihood before using `likelihood`.
 
+## Correlated stellar-population prior
+
+For likelihood-based inference, AsteroScale can replace the independent
+one-dimensional priors on mass, radius, effective temperature, and metallicity
+with a full-covariance Gaussian mixture trained on a synthetic stellar
+population:
+
+```python
+solver = ast.Solver(
+    preset="precise",
+    input_mode="likelihood",
+    population_prior="trilegal_solar_neighbourhood",
+    seed=42,
+)
+posterior = solver.solve(given, want=["M", "R"])
+```
+
+The bundled model represents a TRILEGAL 1.6 solar-neighbourhood simulation in
+
+```{math}
+(\log_{10}M,\log_{10}R,\log_{10}T_{\rm eff},[\mathrm{Fe/H}]).
+```
+
+It therefore prefers combinations that occur together in the simulated
+population rather than combining four independent marginal draws. Exact
+values supplied for any of these quantities condition the mixture
+analytically. Population coordinates not required by a calculation are
+marginalized analytically. Parallax and extinction retain their independent
+priors.
+
+A user-trained model can be selected by path:
+
+```python
+solver = ast.Solver(
+    input_mode="likelihood",
+    population_prior="/path/to/population_gmm.npz",
+)
+```
+
+The correlated model is deliberately inactive in `propagate` mode. That mode
+continues to use the original independent priors, replacing each one with an
+uncertain fundamental input where supplied. This preserves its calculator-like
+meaning: the interface only receives separate one-dimensional input
+distributions and therefore cannot reconstruct their unknown joint
+correlations.
+
+Do not pass an independent custom prior for `M`, `R`, `Teff`, or `FeH` while
+using the correlated model in likelihood mode. Combining the two would
+double-count prior information, so AsteroScale raises an error. Independent
+custom priors for `plx` and `A_G` remain supported.
+
 ## Presets and relation scatter
 
 - `fast` gives a rough result with fewer live points;

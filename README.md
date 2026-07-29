@@ -123,7 +123,8 @@ sphinx-build -W -b html docs docs/_build/html
 - `A_env` is a radial-mode RMS amplitude and should not be added directly to a
   transit-depth uncertainty budget.
 - Weakly constrained results may be sensitive to the independent default
-  field-star priors.
+  field-star priors. Likelihood-mode inference can instead opt into the
+  bundled correlated TRILEGAL population prior.
 - The `precise` preset includes provisional independent relation-scatter terms;
   `fast` and `standard` disable them by default.
 - Gaia DR3 photometry uses a compact MARCS-based bolometric-correction grid.
@@ -166,8 +167,9 @@ sphinx-build -W -b html docs docs/_build/html
 
 The repository also includes an offline `asteroscale-train-prior` command for
 normalizing population-synthesis catalogues and fitting portable,
-full-covariance Gaussian mixtures. This is preparatory infrastructure: the
-resulting model is not yet used by `Solver`. See the
+full-covariance Gaussian mixtures. A trained model can be passed to
+`Solver(input_mode="likelihood", population_prior=...)`; propagation mode
+retains the original independent priors. See the
 [population-prior training guide](https://asteroscale.readthedocs.io/en/latest/development/population-prior-training.html)
 for the catalogue schema, TRILEGAL adapter, weighting assumptions, and
 validation workflow.

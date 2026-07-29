@@ -68,6 +68,7 @@ def solve_many(
     update_interval=None,
     bandpass="TESS",
     input_mode="propagate",
+    population_prior=None,
     relation_scatter=None,
     photometric_error_floor=0.02,
     warn_validity=True,
@@ -99,6 +100,9 @@ def solve_many(
         Photometric response used for ``A_env``.
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs.
+    population_prior : str, path-like or PopulationGMM, optional
+        Shared correlated stellar-population GMM used in likelihood mode.
+        Custom model objects must be picklable.
     relation_scatter : float or dict, optional
         Fractional intrinsic scatter for empirical relations. The default is
         zero for the ``fast`` and ``standard`` presets and the calibrated
@@ -130,6 +134,7 @@ def solve_many(
                          update_interval=update_interval,
                          bandpass=bandpass,
                          input_mode=input_mode,
+                         population_prior=population_prior,
                          relation_scatter=relation_scatter,
                          photometric_error_floor=photometric_error_floor,
                          warn_validity=warn_validity,

@@ -8,10 +8,90 @@ from pathlib import Path
 
 import numpy as np
 from scipy.linalg import solve_triangular
-from scipy.special import logsumexp
+from scipy.special import logsumexp, ndtri
 
 
 COORDINATE_NAMES = ("log10_mass", "log10_radius", "log10_teff", "feh")
+
+
+@dataclass(frozen=True)
+class PopulationPriorTransform:
+    """Unit-cube transform for a marginal or conditional population GMM.
+
+    Parameters
+    ----------
+    weights : ndarray
+        Normalized mixture weights.
+    means : ndarray
+        Component means in standardized selected coordinates.
+    cholesky_factors : ndarray
+        Lower-triangular component covariance factors.
+    coordinate_centre, coordinate_scale : ndarray
+        Standardization constants for the selected physical coordinates.
+    coordinate_names : tuple of str
+        Selected coordinate names in output order.
+    """
+
+    weights: np.ndarray
+    means: np.ndarray
+    cholesky_factors: np.ndarray
+    coordinate_centre: np.ndarray
+    coordinate_scale: np.ndarray
+    coordinate_names: tuple
+
+    def ppf(self, unit):
+        """Transform a unit-cube point into population coordinates.
+
+        The first unit coordinate jointly selects the mixture component and
+        supplies the first within-component Gaussian quantile. This preserves
+        the dimensionality of the continuous parameter vector.
+
+        Parameters
+        ----------
+        unit : array-like
+            Unit-cube point with one entry per selected coordinate.
+
+        Returns
+        -------
+        ndarray
+            Draw in the physical training coordinates and requested order.
+
+        Raises
+        ------
+        ValueError
+            If the unit-cube point has the wrong shape or lies outside
+            ``[0, 1]``.
+        """
+        unit = np.asarray(unit, dtype=float)
+        dimension = len(self.coordinate_names)
+        if unit.shape != (dimension,):
+            raise ValueError(
+                f"Expected a unit-cube point with shape ({dimension},), "
+                f"got {unit.shape}."
+            )
+        if np.any(~np.isfinite(unit)) or np.any((unit < 0.0) | (unit > 1.0)):
+            raise ValueError("Unit-cube coordinates must be finite and in [0, 1].")
+
+        cumulative = np.cumsum(self.weights)
+        component = min(
+            int(np.searchsorted(cumulative, unit[0], side="right")),
+            len(self.weights) - 1,
+        )
+        lower = 0.0 if component == 0 else cumulative[component - 1]
+        local_first = (unit[0] - lower) / self.weights[component]
+
+        lower_open = np.nextafter(0.0, 1.0)
+        upper_open = np.nextafter(1.0, 0.0)
+        gaussian_unit = np.clip(unit, lower_open, upper_open)
+        gaussian_unit[0] = np.clip(local_first, lower_open, upper_open)
+        standard_normal = ndtri(gaussian_unit)
+        standardized = (
+            self.means[component]
+            + self.cholesky_factors[component] @ standard_normal
+        )
+        return (
+            standardized * self.coordinate_scale + self.coordinate_centre
+        )
 
 
 def _effective_sample_size(weight):
@@ -53,6 +133,136 @@ class PopulationGMM:
     coordinate_scale: np.ndarray
     support_bounds: np.ndarray
     metadata: dict
+
+    def marginal_condition(
+        self,
+        coordinate_names,
+        conditioned=None,
+    ):
+        """Build a cached transform for selected and exactly fixed coordinates.
+
+        Unselected, unconditioned coordinates are analytically marginalized.
+        Exactly fixed coordinates update both the component weights and the
+        Gaussian parameters through the standard conditional-normal formula.
+
+        Parameters
+        ----------
+        coordinate_names : sequence of str
+            Coordinates to draw, in the desired output order.
+        conditioned : dict, optional
+            Exact values keyed by names in :data:`COORDINATE_NAMES`. Values
+            use the physical training coordinates, for example
+            ``log10_teff`` rather than temperature in kelvin.
+
+        Returns
+        -------
+        PopulationPriorTransform
+            Cached unit-cube transform for the requested marginal or
+            conditional mixture.
+
+        Raises
+        ------
+        ValueError
+            If names are unknown, duplicated, overlapping, or no coordinates
+            are requested.
+        """
+        coordinate_names = tuple(coordinate_names)
+        conditioned = dict(conditioned or {})
+        known = set(COORDINATE_NAMES)
+        unknown = (set(coordinate_names) | set(conditioned)) - known
+        if unknown:
+            raise ValueError(
+                f"Unknown population coordinates: {sorted(unknown)}."
+            )
+        if not coordinate_names:
+            raise ValueError("At least one population coordinate is required.")
+        if len(set(coordinate_names)) != len(coordinate_names):
+            raise ValueError("Population coordinate names must be unique.")
+        overlap = set(coordinate_names) & set(conditioned)
+        if overlap:
+            raise ValueError(
+                "Coordinates cannot be both sampled and conditioned: "
+                f"{sorted(overlap)}."
+            )
+
+        selected = np.asarray(
+            [COORDINATE_NAMES.index(name) for name in coordinate_names],
+            dtype=int,
+        )
+        means = self.means[:, selected]
+        covariances = self.covariances[
+            :, selected[:, None], selected[None, :]
+        ]
+        weights = np.asarray(self.weights, dtype=float)
+
+        if conditioned:
+            fixed_names = tuple(conditioned)
+            fixed = np.asarray(
+                [COORDINATE_NAMES.index(name) for name in fixed_names],
+                dtype=int,
+            )
+            fixed_values = np.asarray(
+                [conditioned[name] for name in fixed_names],
+                dtype=float,
+            )
+            fixed_standardized = (
+                fixed_values - self.coordinate_centre[fixed]
+            ) / self.coordinate_scale[fixed]
+            fixed_means = self.means[:, fixed]
+            fixed_covariances = self.covariances[
+                :, fixed[:, None], fixed[None, :]
+            ]
+            cross_covariances = self.covariances[
+                :, selected[:, None], fixed[None, :]
+            ]
+            conditional_means = np.empty_like(means)
+            conditional_covariances = np.empty_like(covariances)
+            for component in range(len(weights)):
+                gain = np.linalg.solve(
+                    fixed_covariances[component],
+                    cross_covariances[component].T,
+                ).T
+                conditional_means[component] = (
+                    means[component]
+                    + gain @ (
+                        fixed_standardized - fixed_means[component]
+                    )
+                )
+                conditional_covariances[component] = (
+                    covariances[component]
+                    - gain @ cross_covariances[component].T
+                )
+            means = conditional_means
+            covariances = conditional_covariances
+            log_weights = (
+                np.log(weights)
+                + _log_gaussian_density(
+                    fixed_standardized[None, :],
+                    fixed_means,
+                    fixed_covariances,
+                )[0]
+            )
+            log_weights -= logsumexp(log_weights)
+            weights = np.exp(log_weights)
+
+        # Round-off in the Schur complement can make a theoretically
+        # symmetric conditional covariance differ at machine precision.
+        covariances = 0.5 * (
+            covariances + np.swapaxes(covariances, -1, -2)
+        )
+        positive = weights > 0.0
+        weights = weights[positive]
+        weights /= weights.sum()
+        means = means[positive]
+        covariances = covariances[positive]
+        return PopulationPriorTransform(
+            weights=weights,
+            means=means,
+            cholesky_factors=np.linalg.cholesky(covariances),
+            coordinate_centre=self.coordinate_centre[selected],
+            coordinate_scale=self.coordinate_scale[selected],
+            coordinate_names=coordinate_names,
+        )
 
     def logpdf(self, coordinates, batch_size=100_000):
         """Evaluate log density in the physical training coordinates.

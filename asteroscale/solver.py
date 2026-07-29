@@ -12,6 +12,13 @@ from .sampling import get_sampler_settings
 from .priors import ParallaxPrior 
 from .calibration import fractional_to_log_scatter, normalize_relation_scatter
 from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
+from .population import (
+    POPULATION_COORDINATES,
+    POPULATION_FUNDAMENTALS,
+    load_population_prior,
+    population_to_sampler_coordinate,
+    to_population_coordinate,
+)
 from . import validation, validity
 
 # Any object with a .ppf(u) method works here: frozen scipy.stats
@@ -308,6 +315,12 @@ class Solver:
         corresponding population priors. ``'likelihood'`` treats them as
         measurement likelihoods and retains the population priors. This is
         independent of the Dynesty accuracy ``preset``.
+    population_prior : str, path-like or PopulationGMM, optional
+        Correlated GMM prior for mass, radius, effective temperature, and
+        metallicity. Pass ``'trilegal_solar_neighbourhood'`` for the bundled
+        model or a path to a model created by the training tools. It is used
+        only with ``input_mode='likelihood'``; ``'propagate'`` retains the
+        independent one-dimensional priors.
     sample, bound : str, optional
         Dynesty sampling and bounding methods.
     bootstrap, walks, update_interval : int, optional
@@ -340,6 +353,7 @@ class Solver:
         update_interval=None,
         bandpass="TESS",
         input_mode="propagate",
+        population_prior=None,
         relation_scatter=None,
         photometric_error_floor=DEFAULT_PHOTOMETRIC_ERROR_FLOOR,
         warn_validity=True,
@@ -364,6 +378,10 @@ class Solver:
             Photometric response used for envelope amplitudes.
         input_mode : {'propagate', 'likelihood'}, default='propagate'
             Statistical interpretation of uncertain fundamental inputs.
+        population_prior : str, path-like or PopulationGMM, optional
+            Correlated stellar-population GMM. The built-in name is
+            ``'trilegal_solar_neighbourhood'``. The model is active only in
+            likelihood mode.
         relation_scatter : float or dict, optional
             Fractional intrinsic scatter for empirical relations. The default
             is zero for the ``fast`` and ``standard`` presets and the
@@ -374,8 +392,10 @@ class Solver:
         warn_validity : bool, default=True
             Warn about samples outside adopted calibration domains.
         """
+        self._custom_prior_names = frozenset((priors or {}).keys())
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
+        self.population_prior = load_population_prior(population_prior)
         self.settings = get_sampler_settings(
             preset,
             nlive=nlive,
@@ -757,6 +777,20 @@ class Solver:
         dlogz = self.settings.dlogz if dlogz is None else dlogz
         bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
         input_mode = self.input_mode if input_mode is None else _normalize_input_mode(input_mode)
+        use_population_prior = (
+            self.population_prior is not None and input_mode == "likelihood"
+        )
+        if use_population_prior:
+            overlap = (
+                set(POPULATION_FUNDAMENTALS) & self._custom_prior_names
+            )
+            if overlap:
+                raise ValueError(
+                    "Independent custom priors cannot be combined with the "
+                    "correlated population prior for "
+                    f"{sorted(overlap)}. Remove those entries from priors, "
+                    "or use input_mode='propagate'."
+                )
         relation_scatter = normalize_relation_scatter(
             relation_scatter, base=self.relation_scatter
         )
@@ -848,6 +882,24 @@ class Solver:
 
         n_fundamentals = len(free_fundamentals)
         ndim = n_fundamentals + len(scatter_relations)
+        population_positions = {
+            index: name
+            for index, name in enumerate(free_fundamentals)
+            if use_population_prior and name in POPULATION_COORDINATES
+        }
+        population_transform = None
+        if population_positions:
+            population_names = tuple(population_positions.values())
+            conditioned = {
+                POPULATION_COORDINATES[name]:
+                    to_population_coordinate(name, value)
+                for name, value in fixed_fund.items()
+                if name in POPULATION_COORDINATES
+            }
+            population_transform = self.population_prior.marginal_condition(
+                tuple(POPULATION_COORDINATES[name] for name in population_names),
+                conditioned=conditioned,
+            )
 
         def prior_transform(u):
             """Transform a unit-cube point to internal sampler coordinates.
@@ -864,15 +916,26 @@ class Solver:
                 standard-normal relation-scatter variables. Mass, radius,
                 and parallax are represented by their base-10 logarithms.
             """
-            fundamentals = [
-                _to_sampler_coordinate(p, priors[p].ppf(u[i]))
-                for i, p in enumerate(free_fundamentals)
-            ]
+            fundamentals = np.empty(n_fundamentals, dtype=float)
+            if population_transform is not None:
+                positions = tuple(population_positions)
+                population_values = population_transform.ppf(u[list(positions)])
+                for position, value in zip(positions, population_values):
+                    fundamentals[position] = population_to_sampler_coordinate(
+                        population_positions[position], value
+                    )
+            for index, name in enumerate(free_fundamentals):
+                if index not in population_positions:
+                    fundamentals[index] = _to_sampler_coordinate(
+                        name, priors[name].ppf(u[index])
+                    )
             scatter_z = [
                 normal().ppf(u[n_fundamentals + i])
                 for i, _ in enumerate(scatter_relations)
             ]
-            return np.asarray(fundamentals + scatter_z, dtype=float)
+            return np.concatenate(
+                (fundamentals, np.asarray(scatter_z, dtype=float))
+            )
 
         def loglike(theta):
             """Evaluate the joint log-likelihood.

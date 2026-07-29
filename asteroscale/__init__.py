@@ -11,7 +11,7 @@ _default_solver = None
 
 def solve(
     given, want, nlive=None, priors=None, seed=None, preset=None,
-    input_mode=None, **solve_kwargs,
+    input_mode=None, population_prior=None, **solve_kwargs,
 ):
     """Solve a single stellar inference problem.
 
@@ -31,6 +31,8 @@ def solve(
         Named sampling configuration.
     input_mode : {'propagate', 'likelihood'}, optional
         Statistical interpretation of uncertain fundamental inputs.
+    population_prior : str, path-like or PopulationGMM, optional
+        Correlated stellar-population GMM used in likelihood mode.
     **solve_kwargs
         Additional arguments passed to :meth:`Solver.solve`.
 
@@ -41,7 +43,7 @@ def solve(
     """
     global _default_solver
     if any(value is not None for value in
-           (nlive, priors, seed, preset, input_mode)):
+           (nlive, priors, seed, preset, input_mode, population_prior)):
         kwargs = {}
         if nlive is not None:
             kwargs["nlive"] = nlive
@@ -53,6 +55,8 @@ def solve(
             kwargs["preset"] = preset
         if input_mode is not None:
             kwargs["input_mode"] = input_mode
+        if population_prior is not None:
+            kwargs["population_prior"] = population_prior
         return Solver(**kwargs).solve(given, want, **solve_kwargs)
     if _default_solver is None:
         _default_solver = Solver()
