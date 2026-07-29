@@ -234,6 +234,7 @@ def read_trilegal(
     *,
     max_distance_pc=None,
     teff_range=None,
+    R_range=None,
     feh_kind="mh",
 ):
     """Convert one or more TRILEGAL outputs to the generic catalogue.
@@ -267,25 +268,30 @@ def read_trilegal(
     """
     if isinstance(paths, (str, Path)):
         paths = [paths]
+
     paths = [Path(path) for path in paths]
+
     if not paths:
         raise ValueError("At least one TRILEGAL file is required.")
+    
     if feh_kind not in {"mh", "feh"}:
         raise ValueError("feh_kind must be either 'mh' or 'feh'.")
 
     chunks = []
     for path in paths:
         table = _read_whitespace_table(path)
-        mass = _column(
-            table, ("Mact", "m_act", "current_mass", "mass", "mcur")
-        )
+
+        mass = _column(table, ("Mact", "m_act", "current_mass", "mass", "mcur"))
+
         log_l = _column(table, ("logL", "log_l", "loglum"))
+
         log_teff = _column(table, ("logTe", "logTeff", "log_teff"))
+
         metallicity = _column(table, ("[M/H]", "MH", "FeH", "metallicity"))
+
         log_age = _column(table, ("logAge", "log_age"), required=False)
-        distance_modulus = _column(
-            table, ("m-M0", "mM0", "distance_modulus"), required=False
-        )
+
+        distance_modulus = _column(table, ("m-M0", "mM0", "distance_modulus"), required=False)
 
         teff = 10.0**log_teff
         radius = np.sqrt(10.0**log_l) * (TEFF_SUN / teff) ** 2
@@ -294,16 +300,29 @@ def read_trilegal(
             if max_distance_pc <= 0.0:
                 raise ValueError("max_distance_pc must be positive.")
             if distance_modulus is None:
-                raise ValueError(
-                    "A distance-modulus column is required for a distance cut."
-                )
+                raise ValueError("A distance-modulus column is required for a distance cut.")
+            
             distance_pc = 10.0 ** (distance_modulus / 5.0 + 1.0)
+
             keep &= distance_pc <= max_distance_pc
+
         if teff_range is not None:
+
             low, high = teff_range
+
             if not 0.0 < low < high:
                 raise ValueError("teff_range must contain increasing positive limits.")
+            
             keep &= (teff >= low) & (teff <= high)
+
+        if R_range is not None:
+        
+            low, high = R_range
+
+            if not 0.0 < low < high:
+                raise ValueError("R_range must contain increasing positive limits.")
+            
+            keep &= (radius >= low) & (radius <= high)
 
         chunk = {
             "mass": mass[keep],
