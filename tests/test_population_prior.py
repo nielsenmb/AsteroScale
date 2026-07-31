@@ -2,9 +2,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from baldr import Normal
 
 from asteroscale import Solver
-from asteroscale.distributions import normal
 from asteroscale.population import load_population_prior
 from asteroscale.training.gmm import (
     COORDINATE_NAMES,
@@ -112,7 +112,7 @@ def test_correlated_prior_rejects_overlapping_custom_priors():
     solver = Solver(
         input_mode="likelihood",
         population_prior=single_component_model(),
-        priors={"M": normal(loc=1.0, scale=0.1)},
+        priors={"M": Normal(loc=1.0, scale=0.1, backend="numpy")},
     )
     with pytest.raises(ValueError, match="cannot be combined"):
         solver.solve({"M": (1.0, 0.1)}, ["R"])

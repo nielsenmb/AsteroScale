@@ -85,6 +85,11 @@ representing output distributions.
 
 ## Installation
 
+AsteroScale requires Python 3.10 or newer. Its general-purpose probability
+distributions are provided by [Baldr](https://github.com/nielsenmb/Baldr),
+which is installed directly from its GitHub repository because it is not yet
+published on PyPI.
+
 ```bash
 git clone https://github.com/nielsenmb/AsteroScale.git
 cd AsteroScale
