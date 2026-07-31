@@ -11,7 +11,7 @@ Keeping this quantity bolometric separates the stellar prediction from the
 observing instrument. It is analogous to reporting intrinsic luminosity and
 applying a filter response only when an observation is being modelled.
 
-## Convert to TESS or Kepler
+## Convert to a mission response
 
 Use {func}`asteroscale.convert_bolometric_amplitude` after solving:
 
@@ -33,6 +33,11 @@ amplitude_tess = ast.convert_bolometric_amplitude(
     amplitude_bolometric,
     given["Teff"],
     mission="TESS",
+)
+amplitude_plato = ast.convert_bolometric_amplitude(
+    amplitude_bolometric,
+    given["Teff"],
+    mission="PLATO",
 )
 ```
 
@@ -62,10 +67,32 @@ A_{\mathrm{TESS}}=\frac{2.1}{2.5}A_{\mathrm{Kepler}}
 =0.84A_{\mathrm{Kepler}}.
 $$
 
-The Ballot correction was calibrated over approximately
-$4000\leq T_{\mathrm{eff}}\leq7500$ K. These conversions are empirical
-approximations: atmosphere spectra, metallicity, surface gravity, and the
-precise instrument throughput can matter at higher precision.
+For PLATO, AsteroScale uses the polynomial corrections from
+[Lund, Ballot & Chaplin (2026)](https://arxiv.org/abs/2603.12750):
+
+$$
+c_{P\rightarrow\mathrm{bol}}(T_{\mathrm{eff}})=
+\sum_{i=0}^{2}a_i(T_{\mathrm{eff}}-T_0)^i,
+\qquad
+A_{\mathrm{PLATO}}=\frac{A_{\mathrm{bol}}}
+{c_{P\rightarrow\mathrm{bol}}}.
+$$
+
+Use `mission="PLATO"` for the normal cameras, which is the paper's default
+meaning of PLATO. The blue and red fast-camera responses are available as
+`mission="PLATO-FCB"` and `mission="PLATO-FCR"`, respectively.
+
+| Response | $T_0$ (K) | $a_0$ | $a_1$ (K$^{-1}$) | $a_2$ (K$^{-2}$) |
+|---|---:|---:|---:|---:|
+| Normal cameras | 5446 | 1 | $1.512\times10^{-4}$ | $-4.229\times10^{-9}$ |
+| Blue fast camera | 6137 | 1 | $1.451\times10^{-4}$ | $-3.530\times10^{-9}$ |
+| Red fast camera | 4728 | 1 | $1.874\times10^{-4}$ | $-6.856\times10^{-9}$ |
+
+The Kepler and PLATO relations cover approximately
+$4000\leq T_{\mathrm{eff}}\leq7500$ K. The PLATO relations use Planck spectra
+and the mission response estimates available before launch. Atmosphere
+spectra, metallicity, surface gravity, and the final instrument throughput can
+matter at higher precision.
 
 ## Migrating older code
 

@@ -2,7 +2,10 @@ import numpy as np
 import pytest
 
 from asteroscale import relations as rel
-from asteroscale.photometry import convert_bolometric_amplitude
+from asteroscale.photometry import (
+    convert_bolometric_amplitude,
+    plato_bolometric_correction,
+)
 
 
 def test_solar_reference_values():
@@ -43,8 +46,41 @@ def test_bolometric_amplitude_converts_to_supported_missions():
     assert kepler / tess == pytest.approx(2.5 / 2.1)
 
 
+@pytest.mark.parametrize(
+    ("mission", "camera", "reference_teff", "a1", "a2"),
+    [
+        ("PLATO", "N-CAM", 5446.0, 1.512e-4, -4.229e-9),
+        ("PLATO-FCB", "FCB", 6137.0, 1.451e-4, -3.530e-9),
+        ("PLATO-FCR", "FCR", 4728.0, 1.874e-4, -6.856e-9),
+    ],
+)
+def test_plato_amplitudes_use_lund_polynomial_corrections(
+    mission, camera, reference_teff, a1, a2
+):
+    correction = plato_bolometric_correction(reference_teff, camera=camera)
+    amplitude = convert_bolometric_amplitude(
+        3.0, reference_teff, mission=mission
+    )
+    assert correction == pytest.approx(1.0)
+    assert amplitude == pytest.approx(3.0)
+
+    delta_teff = 5772.0 - reference_teff
+    expected = 1.0 + a1 * delta_teff + a2 * delta_teff**2
+    assert plato_bolometric_correction(
+        5772.0, camera=camera
+    ) == pytest.approx(expected)
+
+
+def test_plato_corrections_vectorize_and_default_to_normal_cameras():
+    teff = np.array([4000.0, 5772.0, 7500.0])
+    correction = plato_bolometric_correction(teff)
+    amplitude = convert_bolometric_amplitude(3.0, teff, mission="plato")
+    assert correction.shape == teff.shape
+    assert amplitude == pytest.approx(3.0 / correction)
+
+
 def test_unknown_amplitude_mission_is_rejected():
-    with pytest.raises(ValueError, match="TESS.*Kepler"):
+    with pytest.raises(ValueError, match="TESS.*Kepler.*PLATO"):
         convert_bolometric_amplitude(2.5, rel.TEFF_SUN, mission="Gaia")
 
 

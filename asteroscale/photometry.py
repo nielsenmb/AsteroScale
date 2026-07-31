@@ -37,16 +37,37 @@ KEPLER_BOLOMETRIC_REFERENCE_TEFF = 5934.0
 KEPLER_BOLOMETRIC_EXPONENT = 0.8
 _AMPLITUDE_RESPONSE = {"KEPLER": 1.0, "TESS": 2.1 / 2.5}
 
+# Polynomial PLATO bandpass-to-bolometric corrections from Lund et al.
+# (2026), Table A.1. Each tuple is (T0, a0, a1, a2) for
+# c_BP-bol = sum_i a_i * (Teff - T0)**i.
+PLATO_BOLOMETRIC_COEFFICIENTS = {
+    "PLATO-N-CAM": (5446.0, 1.0, 1.512e-4, -4.229e-9),
+    "PLATO-FCB": (6137.0, 1.0, 1.451e-4, -3.530e-9),
+    "PLATO-FCR": (4728.0, 1.0, 1.874e-4, -6.856e-9),
+}
+_AMPLITUDE_MISSION_ALIASES = {
+    "KEPLER": "KEPLER",
+    "TESS": "TESS",
+    "PLATO": "PLATO-N-CAM",
+    "PLATO-N-CAM": "PLATO-N-CAM",
+    "PLATO-NCAM": "PLATO-N-CAM",
+    "PLATO-FCB": "PLATO-FCB",
+    "PLATO-FCR": "PLATO-FCR",
+}
+
 
 def _normalize_amplitude_mission(mission):
     """Return the canonical name of a supported amplitude response."""
     if not isinstance(mission, str):
         raise ValueError("mission must be a string.")
-    canonical = mission.strip().upper()
-    if canonical not in _AMPLITUDE_RESPONSE:
+    requested = mission.strip().upper()
+    try:
+        canonical = _AMPLITUDE_MISSION_ALIASES[requested]
+    except KeyError:
         raise ValueError(
-            f"Unsupported mission {mission!r}; choose 'TESS' or 'Kepler'."
-        )
+            f"Unsupported mission {mission!r}; choose 'TESS', 'Kepler', "
+            "'PLATO', 'PLATO-FCB', or 'PLATO-FCR'."
+        ) from None
     return canonical
 
 
@@ -74,6 +95,50 @@ def kepler_bolometric_correction(Teff, backend=np):
     ) ** KEPLER_BOLOMETRIC_EXPONENT
 
 
+def plato_bolometric_correction(Teff, camera="N-CAM", backend=np):
+    """Return a PLATO bandpass-to-bolometric amplitude correction.
+
+    The polynomial relations are from Lund et al. (2026), assuming a Planck
+    spectrum. If ``A_PLATO`` is an amplitude measured in the selected PLATO
+    camera response, then ``A_bolometric = A_PLATO * correction``.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    camera : {'N-CAM', 'FCB', 'FCR'}, default='N-CAM'
+        Normal camera, blue fast camera, or red fast camera response.
+    backend : module, default=numpy
+        NumPy-compatible array backend.
+
+    Returns
+    -------
+    float or ndarray
+        Multiplicative correction from the selected PLATO response to
+        bolometric amplitude.
+
+    Notes
+    -----
+    The fitted relations cover 4000--7500 K. Values outside that interval are
+    extrapolations.
+    """
+    if not isinstance(camera, str):
+        raise ValueError("camera must be a string.")
+    requested = camera.strip().upper()
+    if requested in {"PLATO", "N-CAM", "NCAM", "PLATO-NCAM"}:
+        canonical = "PLATO-N-CAM"
+    elif requested in {"FCB", "PLATO-FCB"}:
+        canonical = "PLATO-FCB"
+    elif requested in {"FCR", "PLATO-FCR"}:
+        canonical = "PLATO-FCR"
+    else:
+        raise ValueError("camera must be 'N-CAM', 'FCB', or 'FCR'.")
+
+    reference_teff, a0, a1, a2 = PLATO_BOLOMETRIC_COEFFICIENTS[canonical]
+    delta_teff = backend.asarray(Teff) - reference_teff
+    return a0 + a1 * delta_teff + a2 * delta_teff**2
+
+
 def convert_bolometric_amplitude(amplitude_bolometric, Teff, mission):
     """Convert a bolometric radial-mode RMS amplitude to a mission response.
 
@@ -83,7 +148,7 @@ def convert_bolometric_amplitude(amplitude_bolometric, Teff, mission):
         Bolometric radial-mode RMS amplitude in ppm.
     Teff : float or array-like
         Effective temperature in kelvin.
-    mission : {'TESS', 'Kepler'}
+    mission : {'TESS', 'Kepler', 'PLATO', 'PLATO-FCB', 'PLATO-FCR'}
         Photometric response to predict (case-insensitive).
 
     Returns
@@ -95,9 +160,17 @@ def convert_bolometric_amplitude(amplitude_bolometric, Teff, mission):
     -----
     The Kepler correction uses the Ballot et al. (2011) power law.  The TESS
     conversion additionally applies the 2.1/2.5 response ratio adopted by
-    Ball et al. (2018).  These are approximate empirical conversions.
+    Ball et al. (2018). The PLATO corrections use the polynomial Planck-
+    spectrum fits of Lund et al. (2026), with ``'PLATO'`` denoting the normal
+    cameras. The PLATO relations cover 4000--7500 K.
     """
     mission = _normalize_amplitude_mission(mission)
+    if mission in PLATO_BOLOMETRIC_COEFFICIENTS:
+        correction = plato_bolometric_correction(
+            Teff, camera=mission.removeprefix("PLATO-")
+        )
+        return np.asarray(amplitude_bolometric) / correction
+
     correction = kepler_bolometric_correction(Teff)
     return (
         np.asarray(amplitude_bolometric)
