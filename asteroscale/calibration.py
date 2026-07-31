@@ -12,6 +12,7 @@ from .relations import DERIVED
 DEFAULT_RELATION_SCATTER = {
     "numax": 0.02,
     "dnu": 0.015,
+    "amplitude_bolometric": 0.25,
     "A_env": 0.25,
     "A_gran": 0.144,
     "b_gran_low": 0.102,

@@ -9,6 +9,7 @@ used by each function.
 
 - [Kjeldsen & Bedding (1995), *Amplitudes of stellar oscillations: the implications for asteroseismology*](https://ui.adsabs.harvard.edu/abs/1995A%26A...293...87K/abstract)
 - [Huber et al. (2011), *Testing Scaling Relations for Solar-like Oscillations from the Main Sequence to Red Giants Using Kepler Data*](https://ui.adsabs.harvard.edu/abs/2011ApJ...743..143H/abstract)
+- [Ballot et al. (2011), *Visibilities and bolometric corrections for stellar oscillation modes observed by Kepler*](https://ui.adsabs.harvard.edu/abs/2011A%26A...531A.124B/abstract)
 - [Mosser et al. (2012), *Characterization of the power excess of solar-like oscillations in red giants with Kepler*](https://ui.adsabs.harvard.edu/abs/2012A%26A...537A..30M/abstract)
 - [Kallinger et al. (2014), *The connection between stellar granulation and oscillation as seen by the Kepler mission*](https://ui.adsabs.harvard.edu/abs/2014A%26A...570A..41K/abstract)
 - [Bailer-Jones (2015), *Estimating Distances from Parallaxes*](https://ui.adsabs.harvard.edu/abs/2015PASP..127..994B/abstract)

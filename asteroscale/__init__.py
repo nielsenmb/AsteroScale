@@ -5,6 +5,7 @@ from .viz import plot_posterior
 from .batch import solve_many
 from .sampling import PRESETS, SamplerSettings
 from .calibration import DEFAULT_RELATION_SCATTER
+from .photometry import convert_bolometric_amplitude
 
 _default_solver = None
 
@@ -68,4 +69,5 @@ __all__ = [
     "plot_posterior", "PRESETS", "SamplerSettings", "INPUT_MODES",
     "DEFAULT_RELATION_SCATTER",
     "DEFAULT_PHOTOMETRIC_ERROR_FLOOR",
+    "convert_bolometric_amplitude",
 ]

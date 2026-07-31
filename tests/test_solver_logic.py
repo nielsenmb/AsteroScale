@@ -40,7 +40,7 @@ def test_other_fundamentals_remain_linear_internally():
 
 
 def test_want_all_expands_to_every_public_quantity():
-    expected = list(FUNDAMENTAL) + list(DERIVED)
+    expected = list(FUNDAMENTAL) + [name for name in DERIVED if name != "A_env"]
     assert normalize_want("all") == expected
     assert normalize_want(["all"]) == expected
 
@@ -52,7 +52,7 @@ def test_all_cannot_be_mixed_with_names():
 
 def test_exact_forward_solve_returns_all_values():
     result = Solver(seed=4).solve(SOLAR, want="all")
-    assert set(result) == set(FUNDAMENTAL) | set(DERIVED)
+    assert set(result) == set(FUNDAMENTAL) | (set(DERIVED) - {"A_env"})
     assert result["M"] == 1.0
     assert result["numax"] == pytest.approx(3090.0)
     assert result["dnu"] == pytest.approx(135.1)
@@ -61,17 +61,34 @@ def test_exact_forward_solve_returns_all_values():
 def test_exact_seismic_prediction_does_not_require_gaia_parameters():
     result = Solver().solve(
         {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},
-        want=["numax", "dnu", "A_env"],
+        want=["numax", "dnu", "amplitude_bolometric"],
     )
     assert result["numax"] == pytest.approx(3090.0)
     assert result["dnu"] == pytest.approx(135.1)
 
 
-def test_solver_and_per_call_bandpass_control_envelope_amplitude():
+def test_bolometric_amplitude_is_independent_of_legacy_bandpass():
     star = {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0}
-    solver = Solver(bandpass="Kepler")
-    kepler = solver.solve(star, want=["A_env"])["A_env"]
-    tess = solver.solve(star, want=["A_env"], bandpass="tess")["A_env"]
+    with pytest.warns(FutureWarning, match="bandpass argument is deprecated"):
+        solver = Solver(bandpass="Kepler")
+    kepler_setting = solver.solve(
+        star, want=["amplitude_bolometric"]
+    )["amplitude_bolometric"]
+    with pytest.warns(FutureWarning, match="bandpass argument is deprecated"):
+        tess_setting = solver.solve(
+            star, want=["amplitude_bolometric"], bandpass="tess"
+        )["amplitude_bolometric"]
+    assert kepler_setting == pytest.approx(tess_setting)
+
+
+def test_legacy_amplitude_output_retains_bandpass_behavior():
+    star = {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0}
+    with pytest.warns(FutureWarning, match="bandpass argument is deprecated"):
+        solver = Solver(bandpass="Kepler")
+    with pytest.warns(FutureWarning, match="'A_env' is deprecated"):
+        kepler = solver.solve(star, want=["A_env"])["A_env"]
+    with pytest.warns(FutureWarning, match="deprecated"):
+        tess = solver.solve(star, want=["A_env"], bandpass="tess")["A_env"]
     assert kepler / tess == pytest.approx(2.5 / 2.1)
 
 
@@ -201,7 +218,9 @@ def test_exact_forward_prediction_can_sample_relation_scatter():
     assert np.std(result) > 0.0
 
 
-@pytest.mark.parametrize("quantity", ["dnu", "A_env", "A_gran"])
+@pytest.mark.parametrize(
+    "quantity", ["dnu", "amplitude_bolometric", "A_gran"]
+)
 def test_predictive_scatter_operates_for_each_relation_group(quantity):
     result = Solver(seed=10, relation_scatter=0.0).solve(
         {"M": 1.0, "R": 1.0, "Teff": 5772.0, "FeH": 0.0},

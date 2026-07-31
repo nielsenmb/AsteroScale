@@ -65,9 +65,10 @@ effective temperature, can constrain mass and radius. AsteroScale uses global
 quantities only; it does not fit individual mode frequencies or infer stellar
 age.
 
-`A_env` is the predicted RMS brightness amplitude of the strongest radial mode
-near $\nu_{\max}$, not the height or integrated area of the entire oscillation
-envelope. `A_gran` describes the empirical granulation RMS scale. See
+`amplitude_bolometric` is the predicted bolometric RMS brightness amplitude of
+the strongest radial mode near $\nu_{\max}$, not the height or integrated area
+of the entire oscillation envelope. `A_gran` describes the empirical
+granulation RMS scale. See
 {doc}`amplitudes` before comparing these values with a time-domain RMS or a
 power-spectrum ordinate.
 

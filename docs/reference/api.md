@@ -10,6 +10,8 @@ the AsteroScale source code.
 
 .. autofunction:: asteroscale.solve_many
 
+.. autofunction:: asteroscale.convert_bolometric_amplitude
+
 .. autofunction:: asteroscale.summarize
 
 .. autofunction:: asteroscale.plot_posterior

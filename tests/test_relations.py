@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from asteroscale import relations as rel
+from asteroscale.photometry import convert_bolometric_amplitude
 
 
 def test_solar_reference_values():
@@ -13,26 +14,44 @@ def test_solar_reference_values():
 
 def test_ball_amplitude_and_fwhm_numerically():
     beta_sun = 1.0 - np.exp((rel.TEFF_SUN - 8907.0) / 1250.0)
-    expected_amplitude = 2.1 * beta_sun * (rel.TEFF_SUN / 5777.0) ** -2
-    assert rel.envelope_amplitude(1.0, 1.0, rel.TEFF_SUN) == pytest.approx(expected_amplitude)
+    correction = (rel.TEFF_SUN / 5934.0) ** 0.8
+    expected_bolometric = (
+        2.5 * beta_sun * (rel.TEFF_SUN / 5777.0) ** -2 * correction
+    )
+    assert rel.bolometric_amplitude(
+        1.0, 1.0, rel.TEFF_SUN
+    ) == pytest.approx(expected_bolometric)
     expected_kepler = 2.5 * beta_sun * (rel.TEFF_SUN / 5777.0) ** -2
-    assert rel.envelope_amplitude(
-        1.0, 1.0, rel.TEFF_SUN, bandpass="Kepler"
-    ) == pytest.approx(expected_kepler)
+    with pytest.warns(FutureWarning, match="deprecated"):
+        legacy = rel.envelope_amplitude(
+            1.0, 1.0, rel.TEFF_SUN, bandpass="Kepler"
+        )
+    assert legacy == pytest.approx(expected_kepler)
     assert rel.envelope_fwhm(1000.0, 5000.0) == pytest.approx(0.66 * 1000.0**0.88)
     hot = 0.66 * 1000.0**0.88 * (1.0 + 6e-4 * (6272.0 - rel.TEFF_SUN))
     assert rel.envelope_fwhm(1000.0, 6272.0) == pytest.approx(hot)
 
 
-def test_unknown_amplitude_bandpass_is_rejected():
+def test_bolometric_amplitude_converts_to_supported_missions():
+    bolometric = rel.bolometric_amplitude(1.0, 1.0, rel.TEFF_SUN)
+    kepler = convert_bolometric_amplitude(
+        bolometric, rel.TEFF_SUN, mission="Kepler"
+    )
+    tess = convert_bolometric_amplitude(
+        bolometric, rel.TEFF_SUN, mission="TESS"
+    )
+    assert kepler / tess == pytest.approx(2.5 / 2.1)
+
+
+def test_unknown_amplitude_mission_is_rejected():
     with pytest.raises(ValueError, match="TESS.*Kepler"):
-        rel.envelope_amplitude(1.0, 1.0, rel.TEFF_SUN, bandpass="Gaia")
+        convert_bolometric_amplitude(2.5, rel.TEFF_SUN, mission="Gaia")
 
 
 def test_amplitude_is_zero_beyond_instability_strip_red_edge():
     luminosity = 10.0
     hotter_than_red_edge = rel.amplitude_red_edge(luminosity) + 100.0
-    assert rel.envelope_amplitude(
+    assert rel.bolometric_amplitude(
         1.5, luminosity, hotter_than_red_edge
     ) == pytest.approx(0.0)
 

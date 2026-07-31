@@ -16,6 +16,7 @@ def test_default_scatter_covers_seismic_amplitude_and_granulation_relations():
     assert set(DEFAULT_RELATION_SCATTER) == {
         "numax",
         "dnu",
+        "amplitude_bolometric",
         "A_env",
         "A_gran",
         "b_gran_low",
@@ -29,7 +30,9 @@ def test_relation_scatter_can_be_overridden_or_disabled():
     configured = normalize_relation_scatter({"numax": 0.03, "dnu": 0.0})
     assert configured["numax"] == 0.03
     assert configured["dnu"] == 0.0
-    assert configured["A_env"] == DEFAULT_RELATION_SCATTER["A_env"]
+    assert configured["amplitude_bolometric"] == (
+        DEFAULT_RELATION_SCATTER["amplitude_bolometric"]
+    )
 
 
 @pytest.mark.parametrize("value", [-0.1, np.inf, np.nan])
@@ -57,12 +60,14 @@ def test_validity_checks_report_each_supported_domain():
             "numax": np.array([3090.0, 5.0]),
             "L": np.array([1.0, 1.0]),
         },
-        ["numax", "dnu", "A_env"],
+        ["numax", "dnu", "amplitude_bolometric"],
     )
-    assert set(report) == {"numax", "dnu", "A_env"}
+    assert set(report) == {"numax", "dnu", "amplitude_bolometric"}
     assert report["numax"]["status"] == "partly_outside_calibration"
     assert report["dnu"]["fraction_within"] == pytest.approx(0.5)
-    assert report["A_env"]["status"] == "partly_outside_calibration"
+    assert report["amplitude_bolometric"]["status"] == (
+        "partly_outside_calibration"
+    )
 
 
 def test_outside_calibration_emits_a_warning():
