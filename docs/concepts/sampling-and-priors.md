@@ -26,6 +26,27 @@ Gaussian distribution. Plain numbers are treated as exactly known. For
 asymmetric or non-Gaussian information, supply a distribution object with the
 appropriate `ppf` or `logpdf` method.
 
+AsteroScale uses [Baldr](https://github.com/nielsenmb/Baldr) for its default
+one-dimensional distributions. Custom priors can use the same constructors;
+select the NumPy backend because AsteroScale may evaluate a prior for either
+one value or an array:
+
+```python
+from baldr import TruncatedNormal
+
+mass_prior = TruncatedNormal(
+    loc=1.05,
+    scale=0.10,
+    low=0.7,
+    high=1.4,
+    backend="numpy",
+)
+solver = ast.Solver(priors={"M": mass_prior})
+```
+
+Frozen `scipy.stats` distributions and other objects exposing the required
+methods remain supported.
+
 ## What a prior does
 
 A prior describes plausible values before the current measurements are

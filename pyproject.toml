@@ -2,11 +2,17 @@
 name = "AsteroScale"
 version = "0.2.0"
 description = "Marginalizing solver for asteroseismic scaling relations"
-requires-python = ">=3.9"
-dependencies = ["numpy", "scipy", "dynesty", "matplotlib", "jax"]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "dynesty",
+    "matplotlib",
+    "baldr[numpy] @ git+https://github.com/nielsenmb/Baldr.git@476f59ff4114226488f9e155c83593a725f0f232",
+]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+test = ["pytest>=7", "jax>=0.4.28"]
 docs = [
     "sphinx>=7",
     "pydata-sphinx-theme>=0.15",

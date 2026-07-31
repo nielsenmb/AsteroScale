@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
+from baldr import Normal
 
 from asteroscale import Solver
 from asteroscale.calibration import DEFAULT_RELATION_SCATTER
-from asteroscale.distributions import normal
 from asteroscale.solver import (
     LOG10_SAMPLED_FUNDAMENTALS,
     _from_sampler_coordinate,
@@ -90,6 +90,13 @@ def test_point_estimate_recovers_mass_and_radius():
     assert result["R"] == pytest.approx(1.0, rel=1e-5)
 
 
+def test_point_estimate_bounds_follow_baldr_support():
+    solver = Solver()
+
+    assert solver._bounds_for("Teff") == (4000.0, 7000.0)
+    assert solver._bounds_for("A_G") == (0.0, np.inf)
+
+
 def test_prior_predictive_is_reproducible():
     given = {"Teff": (5772.0, 20.0), "M": (1.0, 0.05), "R": 1.0,
              "plx": 100.0, "A_G": 0.0, "FeH": 0.0}
@@ -99,8 +106,8 @@ def test_prior_predictive_is_reproducible():
 
 
 def test_propagate_mode_replaces_fundamental_prior():
-    population_prior = normal(loc=0.8, scale=0.1)
-    measurement = normal(loc=1.2, scale=0.05)
+    population_prior = Normal(loc=0.8, scale=0.1, backend="numpy")
+    measurement = Normal(loc=1.2, scale=0.05, backend="numpy")
     priors, likelihood = _partition_constraints(
         {"M": population_prior}, {"M": measurement}, "propagate"
     )
@@ -109,8 +116,8 @@ def test_propagate_mode_replaces_fundamental_prior():
 
 
 def test_likelihood_mode_retains_prior_and_conditions_on_measurement():
-    population_prior = normal(loc=0.8, scale=0.1)
-    measurement = normal(loc=1.2, scale=0.05)
+    population_prior = Normal(loc=0.8, scale=0.1, backend="numpy")
+    measurement = Normal(loc=1.2, scale=0.05, backend="numpy")
     priors, likelihood = _partition_constraints(
         {"M": population_prior}, {"M": measurement}, "likelihood"
     )

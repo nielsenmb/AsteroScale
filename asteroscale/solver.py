@@ -5,13 +5,19 @@ import numpy as np
 from scipy import optimize
 import dynesty
 from dynesty.utils import resample_equal
+from baldr import (
+    Exponential,
+    Normal,
+    TruncatedNormal,
+    TruncatedPowerLaw,
+    Uniform,
+)
 
 from .relations import DERIVED, FUNDAMENTAL, normalize_bandpass
 from .forward import evaluate_relations, required_fundamentals, required_relations
 from .sampling import get_sampler_settings
-from .priors import ParallaxPrior 
+from .priors import ParallaxPrior
 from .calibration import fractional_to_log_scatter, normalize_relation_scatter
-from .distributions import normal, uniform, TruncatedPowerLaw, Exponential, TruncatedNormal
 from .population import (
     POPULATION_COORDINATES,
     POPULATION_FUNDAMENTALS,
@@ -21,25 +27,34 @@ from .population import (
 )
 from . import validation, validity
 
-# Any object with a .ppf(u) method works here: frozen scipy.stats
-# distributions, the classes in priors.py, or your own custom class (e.g.
-# the JAX-jittable ones in distributions.py, if you go that route later).
+# Any object with a .ppf(u) method works here: Baldr distributions, frozen
+# scipy.stats distributions, the classes in priors.py, or a custom class.
 # These defaults aim for "plausible for a random field star", not
 # "uninformative" -- a flat prior over mass, say, implies high-mass stars
 # are as common as low-mass ones, which is badly wrong.
 #
-# priors.py's classes are used here rather than scipy.stats, not because
-# scipy.stats can't do this, but because its frozen-distribution objects
-# are much slower for the scalar, one-value-at-a-time .ppf/.logpdf calls
-# this solver actually makes -- see priors.py's module docstring.
+# Baldr's NumPy backend supports the array-valued propagation path as well as
+# Dynesty's scalar, one-value-at-a-time .ppf/.logpdf calls.
 DEFAULT_PRIORS = {
-    "M": TruncatedPowerLaw(alpha=2.35, low=0.5, high=3.0),  # Salpeter IMF slope
-    "R": TruncatedPowerLaw(alpha=1.0, low=0.5, high=20.0),  # log-uniform: R spans >1 decade
-    "Teff": uniform(loc=4000.0, scale=3000.0),   # flat 4000-7000 K, no strong prior
+    "M": TruncatedPowerLaw(
+        alpha=2.35, low=0.5, high=3.0, backend="numpy"
+    ),  # Salpeter IMF slope
+    "R": TruncatedPowerLaw(
+        alpha=1.0, low=0.5, high=20.0, backend="numpy"
+    ),  # log-uniform: R spans >1 decade
+    "Teff": Uniform(
+        loc=4000.0, scale=3000.0, backend="numpy"
+    ),  # flat 4000-7000 K, no strong prior
     "plx": ParallaxPrior(length_scale_pc=1350.0),  # Bailer-Jones distance prior
-    "A_G": Exponential(scale=0.2),           # most stars nearby have low extinction
-    "FeH": TruncatedNormal(                  # solar-neighborhood metallicity spread,
-        loc=-0.1, scale=0.25, low=-1.0, high=0.5,  # truncated to the range the dnu
+    "A_G": Exponential(
+        scale=0.2, backend="numpy"
+    ),  # most stars nearby have low extinction
+    "FeH": TruncatedNormal(  # solar-neighborhood metallicity spread,
+        loc=-0.1,
+        scale=0.25,
+        low=-1.0,
+        high=0.5,
+        backend="numpy",  # truncated to the range the dnu
     ),                                        # metallicity correction is calibrated over
 }
 
@@ -175,7 +190,7 @@ def _as_distribution(p):
     """
     if isinstance(p, tuple):
         mean, err = p
-        return normal(loc=mean, scale=err)
+        return Normal(loc=mean, scale=err, backend="numpy")
     return p
 
 
@@ -205,7 +220,9 @@ def _parse_given(given):
     for name, value in given.items():
         if isinstance(value, tuple):
             mean, err = value
-            constraints[name] = normal(loc=mean, scale=err)
+            constraints[name] = Normal(
+                loc=mean, scale=err, backend="numpy"
+            )
         elif hasattr(value, "logpdf") or hasattr(value, "ppf"):
             constraints[name] = value
         else:
@@ -623,6 +640,14 @@ class Solver:
                 pass
         if hasattr(prior, "low") and hasattr(prior, "high"):
             return (prior.low, prior.high)
+        if hasattr(prior, "ppf"):
+            try:
+                low = float(np.asarray(prior.ppf(0.0)))
+                high = float(np.asarray(prior.ppf(1.0)))
+                if not np.isnan(low) and not np.isnan(high) and low < high:
+                    return (low, high)
+            except Exception:
+                pass
         return (-np.inf, np.inf)
 
     def _point_estimate(
@@ -882,6 +907,7 @@ class Solver:
 
         n_fundamentals = len(free_fundamentals)
         ndim = n_fundamentals + len(scatter_relations)
+        standard_normal = Normal(backend="numpy")
         population_positions = {
             index: name
             for index, name in enumerate(free_fundamentals)
@@ -930,7 +956,7 @@ class Solver:
                         name, priors[name].ppf(u[index])
                     )
             scatter_z = [
-                normal().ppf(u[n_fundamentals + i])
+                standard_normal.ppf(u[n_fundamentals + i])
                 for i, _ in enumerate(scatter_relations)
             ]
             return np.concatenate(

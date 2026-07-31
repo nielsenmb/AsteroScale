@@ -1,6 +1,10 @@
 # Installation
 
-AsteroScale currently installs directly from its GitHub repository.
+AsteroScale currently installs directly from its GitHub repository. It
+requires Python 3.10 or newer. The normal, uniform, and other general
+probability distributions used by the solver come from
+[Baldr](https://github.com/nielsenmb/Baldr). The pinned Baldr revision is
+installed automatically from GitHub because Baldr is not yet on PyPI.
 
 ```bash
 git clone https://github.com/nielsenmb/AsteroScale.git
