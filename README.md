@@ -37,8 +37,7 @@ star = {
 
 prediction = ast.solve(
     star,
-    want=["numax", "dnu", "FWHM_env", "A_env", "A_gran"],
-    bandpass="TESS",
+    want=["numax", "dnu", "FWHM_env", "amplitude_bolometric", "A_gran"],
 )
 
 for name, value in prediction.items():
@@ -51,15 +50,22 @@ This gives approximately:
 numax        1982.25
 dnu            94.86
 FWHM_env      598.04
-A_env           2.96
+amplitude_bolometric 3.56
 A_gran         34.47
 ```
 
 `numax` is the approximate centre of the oscillation-power excess, `dnu` is
 the average spacing of modes with consecutive radial order, and `FWHM_env`
 describes the approximate width of the excess. Frequencies are in microhertz.
-`A_env` is the maximum radial-mode RMS amplitude in the selected TESS or Kepler
-band, not the total light-curve RMS or a detection probability.
+`amplitude_bolometric` is the maximum bolometric radial-mode RMS amplitude,
+not the total light-curve RMS or a detection probability. Convert it to an
+instrument response only when needed:
+
+```python
+tess_amplitude = ast.convert_bolometric_amplitude(
+    prediction["amplitude_bolometric"], star["Teff"], mission="TESS"
+)
+```
 
 Measurements with independent Gaussian uncertainties can be supplied as
 `(value, one-sigma uncertainty)`:
@@ -105,7 +111,7 @@ includes:
   spectra;
 - complete tables of fundamental and derived quantities, dependencies, and
   units;
-- amplitude and bandpass conventions;
+- bolometric-amplitude and mission-conversion conventions;
 - uncertainty propagation, priors, relation scatter, and sampler settings;
 - an API reference generated from NumPy-style docstrings; and
 - worked notebooks, including real stars with literature comparisons.
@@ -125,8 +131,8 @@ sphinx-build -W -b html docs docs/_build/html
 - Predicted amplitudes do not establish detectability. Instrumental noise,
   cadence attenuation, dilution, activity, gaps, and the observing window are
   not included.
-- `A_env` is a radial-mode RMS amplitude and should not be added directly to a
-  transit-depth uncertainty budget.
+- `amplitude_bolometric` is a radial-mode RMS amplitude and should not be
+  added directly to a transit-depth uncertainty budget.
 - Weakly constrained results may be sensitive to the independent default
   field-star priors. Likelihood-mode inference can instead opt into the
   bundled correlated TRILEGAL population prior.

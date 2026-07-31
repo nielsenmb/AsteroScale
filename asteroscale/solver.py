@@ -1,6 +1,8 @@
 """Generic any-subset-in -> any-subset-out solver via nested sampling (dynesty).
 
 """
+import warnings
+
 import numpy as np
 from scipy import optimize
 import dynesty
@@ -59,6 +61,20 @@ DEFAULT_PRIORS = {
 }
 
 INPUT_MODES = ("propagate", "likelihood")
+
+
+def _deprecated_bandpass(bandpass, stacklevel=3):
+    """Validate a deprecated bandpass argument and emit one warning."""
+    if bandpass is None:
+        return "TESS"
+    warnings.warn(
+        "The Solver bandpass argument is deprecated. AsteroScale now "
+        "reports 'amplitude_bolometric'; convert it afterward with "
+        "convert_bolometric_amplitude().",
+        FutureWarning,
+        stacklevel=stacklevel,
+    )
+    return normalize_bandpass(bandpass)
 LOG10_SAMPLED_FUNDAMENTALS = frozenset(("M", "R", "plx"))
 DEFAULT_PHOTOMETRIC_ERROR_FLOOR = 0.02
 PHOTOMETRIC_MAGNITUDES = frozenset(
@@ -323,9 +339,10 @@ class Solver:
         Override the preset's number of live points.
     seed : int, optional
         Seed for the NumPy random generator.
-    bandpass : {'TESS', 'Kepler'}, default='TESS'
-        Photometric response used for ``A_env``. May be overridden by an
-        individual :meth:`solve` call.
+    bandpass : {'TESS', 'Kepler'}, optional
+        Deprecated compatibility setting used only for the legacy ``A_env``
+        output. New code should request ``amplitude_bolometric`` and convert
+        it with :func:`asteroscale.convert_bolometric_amplitude`.
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs. ``'propagate'``
         treats them as the current distributions to propagate, replacing the
@@ -368,7 +385,7 @@ class Solver:
         bootstrap=None,
         walks=None,
         update_interval=None,
-        bandpass="TESS",
+        bandpass=None,
         input_mode="propagate",
         population_prior=None,
         relation_scatter=None,
@@ -391,8 +408,9 @@ class Solver:
             Dynesty sampling and bounding methods.
         bootstrap, walks, update_interval : int, optional
             Additional Dynesty settings.
-        bandpass : {'TESS', 'Kepler'}, default='TESS'
-            Photometric response used for envelope amplitudes.
+        bandpass : {'TESS', 'Kepler'}, optional
+            Deprecated compatibility setting for the legacy ``A_env``
+            output.
         input_mode : {'propagate', 'likelihood'}, default='propagate'
             Statistical interpretation of uncertain fundamental inputs.
         population_prior : str, path-like or PopulationGMM, optional
@@ -425,7 +443,7 @@ class Solver:
         self.nlive = self.settings.nlive
         self.sample = self.settings.sample
         self.bound = self.settings.bound
-        self.bandpass = normalize_bandpass(bandpass)
+        self.bandpass = _deprecated_bandpass(bandpass)
         self.input_mode = _normalize_input_mode(input_mode)
         preset_scatter = normalize_relation_scatter(
             None if preset == "precise" else 0.0
@@ -766,8 +784,8 @@ class Solver:
             Include calibration-domain flags under ``'_validity'``. The same
             report is always available as :attr:`last_validity`.
         bandpass : {'TESS', 'Kepler'}, optional
-            Photometric response used for ``A_env``. Overrides the value
-            supplied to :class:`Solver` for this call.
+            Deprecated compatibility override for the legacy ``A_env``
+            output. It does not affect ``amplitude_bolometric``.
         input_mode : {'propagate', 'likelihood'}, optional
             Override how uncertain fundamental inputs are interpreted. See
             :class:`Solver`. Exact scalar inputs are fixed in either mode.
@@ -800,7 +818,10 @@ class Solver:
         )
         want = validation.normalize_want(want)
         dlogz = self.settings.dlogz if dlogz is None else dlogz
-        bandpass = self.bandpass if bandpass is None else normalize_bandpass(bandpass)
+        bandpass = (
+            self.bandpass if bandpass is None
+            else _deprecated_bandpass(bandpass)
+        )
         input_mode = self.input_mode if input_mode is None else _normalize_input_mode(input_mode)
         use_population_prior = (
             self.population_prior is not None and input_mode == "likelihood"
@@ -1050,7 +1071,8 @@ class Solver:
         want : str or sequence of str
             Additional quantities to derive.
         bandpass : {'TESS', 'Kepler'}, optional
-            Photometric response. The default reuses the previous solve.
+            Deprecated compatibility override for the legacy ``A_env``
+            output. It does not affect ``amplitude_bolometric``.
         return_validity : bool, default=False
             Include calibration-domain flags under ``'_validity'``.
 
@@ -1081,7 +1103,9 @@ class Solver:
                },
                want=["M", "R"],
            )
-           extra = solver.predict(["L", "rho", "logg", "A_env"])
+           extra = solver.predict(
+               ["L", "rho", "logg", "amplitude_bolometric"]
+           )
         """
         if self._last_fund is None:
             raise RuntimeError(
@@ -1089,7 +1113,10 @@ class Solver:
                 "quantities from -- call solve() first."
             )
         want = validation.normalize_want(want)
-        bandpass = self._last_bandpass if bandpass is None else normalize_bandpass(bandpass)
+        bandpass = (
+            self._last_bandpass if bandpass is None
+            else _deprecated_bandpass(bandpass)
+        )
         missing = [
             name for name in required_fundamentals(want)
             if name not in self._last_fund

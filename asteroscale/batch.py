@@ -66,7 +66,7 @@ def solve_many(
     bootstrap=None,
     walks=None,
     update_interval=None,
-    bandpass="TESS",
+    bandpass=None,
     input_mode="propagate",
     population_prior=None,
     relation_scatter=None,
@@ -96,8 +96,8 @@ def solve_many(
         Shared Dynesty sampling and bounding methods.
     bootstrap, walks, update_interval : int, optional
         Additional shared Dynesty settings.
-    bandpass : {'TESS', 'Kepler'}, default='TESS'
-        Photometric response used for ``A_env``.
+    bandpass : {'TESS', 'Kepler'}, optional
+        Deprecated compatibility setting for the legacy ``A_env`` output.
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs.
     population_prior : str, path-like or PopulationGMM, optional

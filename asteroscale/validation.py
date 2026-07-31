@@ -10,6 +10,7 @@ import numpy as np
 from .relations import DERIVED, FUNDAMENTAL
 
 _ALL_NAMES = set(FUNDAMENTAL) | set(DERIVED)
+_DEPRECATED_NAMES = {"A_env": "amplitude_bolometric"}
 
 # Quantities that are physically meaningless at or below zero.
 _POSITIVE = {"M", "R", "Teff", "plx", "numax", "dnu", "L", "d", "rho"}
@@ -78,7 +79,9 @@ def normalize_want(want):
         If a requested quantity is unknown.
     """
     if want == "all" or want == ["all"] or want == ("all",):
-        return list(FUNDAMENTAL) + list(DERIVED)
+        return list(FUNDAMENTAL) + [
+            name for name in DERIVED if name not in _DEPRECATED_NAMES
+        ]
     if isinstance(want, str):
         want = [want]
     if not want:
@@ -86,6 +89,16 @@ def normalize_want(want):
     if "all" in want:
         raise ValueError("'all' cannot be combined with individual quantity names.")
     validate_names(want, "want")
+    for name in want:
+        if name in _DEPRECATED_NAMES:
+            warnings.warn(
+                f"{name!r} is deprecated; request "
+                f"{_DEPRECATED_NAMES[name]!r} and convert it with "
+                "convert_bolometric_amplitude() when a mission response "
+                "is needed.",
+                FutureWarning,
+                stacklevel=2,
+            )
     return list(want)
 
 
@@ -128,6 +141,14 @@ def validate_given(given):
             "priors directly instead: Solver().priors[name].ppf(...).)"
         )
     validate_names(given.keys(), "given")
+    for name in given:
+        if name in _DEPRECATED_NAMES:
+            warnings.warn(
+                f"{name!r} is deprecated; use "
+                f"{_DEPRECATED_NAMES[name]!r} instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
 
     for name, value in given.items():
         if isinstance(value, tuple):

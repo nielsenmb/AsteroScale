@@ -13,7 +13,7 @@ The calibrated fractional one-sigma values used by `precise` are:
 |---|---:|---|
 | `numax` | 2% | provisional model-discrepancy floor for the adopted scaling relation |
 | `dnu` | 1.5% | provisional residual uncertainty in the corrected scaling relation |
-| `A_env` | 25% | empirical spread discussed by [Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract) |
+| `amplitude_bolometric` | 25% | empirical spread discussed by [Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract) |
 | `A_gran` | 14.4% | fit scatter from [Kallinger et al. (2014)](https://ui.adsabs.harvard.edu/abs/2014A%26A...570A..41K/abstract) |
 | `b_gran_low` | 10.2% | fit scatter from Kallinger et al. (2014) |
 | `b_gran_high` | 8.7% | fit scatter from Kallinger et al. (2014) |

@@ -1,67 +1,93 @@
-# Oscillation amplitudes and bandpasses
+# Oscillation amplitudes and mission responses
 
-AsteroScale reports `A_env` as the maximum **radial-mode RMS amplitude** in the
-selected photometric band. For example, `A_env = 3 ppm` means that the
-root-mean-square brightness variation of the strongest radial mode is about
-three parts per million. It is not the integrated amplitude of every mode in
-the envelope, a power-spectral-density height, or the total light-curve RMS.
+AsteroScale reports `amplitude_bolometric` as the maximum **bolometric
+radial-mode RMS amplitude**. For example, a value of 3 ppm means that the
+root-mean-square brightness variation of the strongest radial mode would be
+three parts per million after correcting for the wavelength response of a
+particular detector. It is not the integrated amplitude of every mode in the
+envelope, a power-spectral-density height, or the total light-curve RMS.
 
-Use either a solver-wide default or a per-call override:
+Keeping this quantity bolometric separates the stellar prediction from the
+observing instrument. It is analogous to reporting intrinsic luminosity and
+applying a filter response only when an observation is being modelled.
+
+## Convert to TESS or Kepler
+
+Use {func}`asteroscale.convert_bolometric_amplitude` after solving:
 
 ```python
 import asteroscale as ast
 
-solver = ast.Solver(bandpass="Kepler")
-kepler = solver.solve(given, want=["A_env"])
-tess = solver.solve(given, want=["A_env"], bandpass="TESS")
+prediction = ast.solve(
+    given,
+    want=["amplitude_bolometric"],
+)
+
+amplitude_bolometric = prediction["amplitude_bolometric"]
+amplitude_kepler = ast.convert_bolometric_amplitude(
+    amplitude_bolometric,
+    given["Teff"],
+    mission="Kepler",
+)
+amplitude_tess = ast.convert_bolometric_amplitude(
+    amplitude_bolometric,
+    given["Teff"],
+    mission="TESS",
+)
 ```
 
-TESS is the default. The adopted solar normalisations are 2.1 ppm for TESS and
-2.5 ppm for Kepler before applying the empirical hot-star suppression in
-[Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract).
-The Kepler amplitude is slightly larger because its response is bluer.
-
-## Approximate bolometric conversion
-
-A bolometric amplitude describes the brightness variation integrated over all
-wavelengths. A detector measures a bandpass-specific amplitude instead. The
-Kepler response correction adopted by
-[Huber et al. (2011)](https://ui.adsabs.harvard.edu/abs/2011ApJ...743..143H/abstract)
-is
+The [Ballot et al. (2011)](https://ui.adsabs.harvard.edu/abs/2011A%26A...531A.124B/abstract)
+power-law correction is
 
 $$
-c_K(T_{\mathrm{eff}})=
-\left(\frac{T_{\mathrm{eff}}}{5934\,\mathrm{K}}\right)^{0.8}.
+c_{K\rightarrow\mathrm{bol}}(T_{\mathrm{eff}})=
+\left(\frac{T_{\mathrm{eff}}}{5934\,\mathrm{K}}\right)^{0.8},
 $$
 
-An approximate conversion from Kepler RMS amplitude is
+with
 
 $$
-A_{\mathrm{bol,rms}}\simeq A_{\mathrm{Kp}}\,c_K(T_{\mathrm{eff}}).
+A_{\mathrm{bol}}=A_{\mathrm{Kepler}}
+c_{K\rightarrow\mathrm{bol}},
+\qquad
+A_{\mathrm{Kepler}}=\frac{A_{\mathrm{bol}}}
+{c_{K\rightarrow\mathrm{bol}}}.
 $$
 
-Using the approximate response ratio from
-[Campante et al. (2016)](https://ui.adsabs.harvard.edu/abs/2016ApJ...830..138C/abstract),
+For TESS, AsteroScale retains the solar-response ratio used by
+[Ball et al. (2018)](https://ui.adsabs.harvard.edu/abs/2018ApJS..239...34B/abstract):
 
 $$
-A_{\mathrm{TESS}}\simeq0.85A_{\mathrm{Kp}},
+A_{\mathrm{TESS}}=\frac{2.1}{2.5}A_{\mathrm{Kepler}}
+=0.84A_{\mathrm{Kepler}}.
 $$
 
-and therefore
+The Ballot correction was calibrated over approximately
+$4000\leq T_{\mathrm{eff}}\leq7500$ K. These conversions are empirical
+approximations: atmosphere spectra, metallicity, surface gravity, and the
+precise instrument throughput can matter at higher precision.
 
-$$
-A_{\mathrm{bol,rms}}\simeq
-A_{\mathrm{TESS}}\frac{c_K(T_{\mathrm{eff}})}{0.85}.
-$$
+## Migrating older code
+
+The solver's `bandpass` argument and the `A_env` output are deprecated. They
+temporarily retain the previous mission-specific behaviour, but emit a
+`FutureWarning`:
+
+```python
+# Deprecated compatibility path
+legacy = ast.solve(given, want=["A_env"], bandpass="TESS")
+```
+
+New code should request `amplitude_bolometric` and convert it explicitly. This
+makes the chosen detector visible at the point where it actually matters.
 
 Peak sinusoidal amplitudes are larger than RMS amplitudes by a factor of
-$\sqrt{2}$. These are empirical conversions, not exact changes of unit:
-published solar normalisations differ by a few percent, and real amplitudes
-also vary with activity and observing conditions.
+$\sqrt{2}$. Published solar normalisations differ by a few percent, and real
+amplitudes also vary with activity and observing conditions.
 
 ## Amplitude is not detectability
 
 To assess whether a signal is observable, compare an instrument-appropriate
 oscillation model with the local background and noise in the power spectrum.
-Do not add `A_env` or `A_gran` directly to a transit-depth error budget. The
-{doc}`../limitations` page lists the missing instrumental effects.
+Do not add `amplitude_bolometric` or `A_gran` directly to a transit-depth error
+budget. The {doc}`../limitations` page lists the missing instrumental effects.

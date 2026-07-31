@@ -98,12 +98,15 @@ def assess_validity(values, active_names):
             "approximation; Gamma_1 is fixed to its solar value",
         )
 
-    if "A_env" in active and all(name in values for name in ("L", "Teff")):
+    amplitude_names = active & {"amplitude_bolometric", "A_env"}
+    if amplitude_names and all(name in values for name in ("L", "Teff")):
         valid = np.asarray(values["Teff"]) < amplitude_red_edge(values["L"])
-        report["A_env"] = _entry(
-            valid,
-            "Teff below the adopted red edge of the delta-Scuti instability strip",
-        )
+        for name in amplitude_names:
+            report[name] = _entry(
+                valid,
+                "Teff below the adopted red edge of the delta-Scuti "
+                "instability strip",
+            )
 
     photometric = {
         "BC_G", "BC_BP", "BC_RP", "A_BP", "A_RP",

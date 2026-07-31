@@ -30,6 +30,81 @@ MARCS_DOMAIN = {
 _BAND_INDEX = {"G": 0, "BP": 1, "RP": 2}
 _EXTINCTION_INDEX = {"BP": 0, "RP": 1}
 
+# Ballot et al. (2011) power-law correction from the Kepler response to
+# bolometric radial-mode amplitudes.  Ball et al. (2018) adopt a TESS/Kepler
+# amplitude ratio of 2.1 / 2.5 for their solar normalization.
+KEPLER_BOLOMETRIC_REFERENCE_TEFF = 5934.0
+KEPLER_BOLOMETRIC_EXPONENT = 0.8
+_AMPLITUDE_RESPONSE = {"KEPLER": 1.0, "TESS": 2.1 / 2.5}
+
+
+def _normalize_amplitude_mission(mission):
+    """Return the canonical name of a supported amplitude response."""
+    if not isinstance(mission, str):
+        raise ValueError("mission must be a string.")
+    canonical = mission.strip().upper()
+    if canonical not in _AMPLITUDE_RESPONSE:
+        raise ValueError(
+            f"Unsupported mission {mission!r}; choose 'TESS' or 'Kepler'."
+        )
+    return canonical
+
+
+def kepler_bolometric_correction(Teff, backend=np):
+    """Return the Kepler-to-bolometric radial-mode amplitude correction.
+
+    This is the power-law approximation from Ballot et al. (2011).  If
+    ``A_Kepler`` is the amplitude measured in the Kepler response, then
+    ``A_bolometric = A_Kepler * correction``.
+
+    Parameters
+    ----------
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    backend : module, default=numpy
+        NumPy-compatible array backend.
+
+    Returns
+    -------
+    float or ndarray
+        Multiplicative correction from Kepler to bolometric amplitude.
+    """
+    return (
+        backend.asarray(Teff) / KEPLER_BOLOMETRIC_REFERENCE_TEFF
+    ) ** KEPLER_BOLOMETRIC_EXPONENT
+
+
+def convert_bolometric_amplitude(amplitude_bolometric, Teff, mission):
+    """Convert a bolometric radial-mode RMS amplitude to a mission response.
+
+    Parameters
+    ----------
+    amplitude_bolometric : float or array-like
+        Bolometric radial-mode RMS amplitude in ppm.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    mission : {'TESS', 'Kepler'}
+        Photometric response to predict (case-insensitive).
+
+    Returns
+    -------
+    float or ndarray
+        Radial-mode RMS amplitude in the selected mission response, in ppm.
+
+    Notes
+    -----
+    The Kepler correction uses the Ballot et al. (2011) power law.  The TESS
+    conversion additionally applies the 2.1/2.5 response ratio adopted by
+    Ball et al. (2018).  These are approximate empirical conversions.
+    """
+    mission = _normalize_amplitude_mission(mission)
+    correction = kepler_bolometric_correction(Teff)
+    return (
+        np.asarray(amplitude_bolometric)
+        * _AMPLITUDE_RESPONSE[mission]
+        / correction
+    )
+
 
 def _bracket(axis, value, backend):
     """Return lower grid indices, fractional positions, and validity."""

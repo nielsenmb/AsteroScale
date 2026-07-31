@@ -24,9 +24,9 @@ given = {
     "Teff": 6000,   # K
     "FeH": 0.1,     # dex; 0 is solar metallicity
 }
-want = ["numax", "dnu", "FWHM_env", "A_env", "A_gran"]
+want = ["numax", "dnu", "FWHM_env", "amplitude_bolometric", "A_gran"]
 
-prediction = ast.solve(given=given, want=want, bandpass="TESS")
+prediction = ast.solve(given=given, want=want)
 
 for name, value in prediction.items():
     print(f"{name:12s} {value:.2f}")
@@ -40,7 +40,7 @@ are:
 - `FWHM_env`: the approximate width of that excess;
 - `dnu`: the average spacing between consecutive modes of the same angular
   degree;
-- `A_env`: the maximum radial-mode RMS amplitude in the selected band; and
+- `amplitude_bolometric`: the maximum bolometric radial-mode RMS amplitude; and
 - `A_gran`: an empirical granulation RMS scale.
 
 These are not a detection probability or a complete time-domain noise model.
@@ -60,7 +60,7 @@ given = {
 
 samples = ast.solve(
     given=given,
-    want=["numax", "dnu", "FWHM_env", "A_env"],
+    want=["numax", "dnu", "FWHM_env", "amplitude_bolometric"],
     seed=42,
 )
 ast.summarize(samples)

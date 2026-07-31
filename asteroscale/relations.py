@@ -2,9 +2,15 @@
 
 All masses/radii in solar units, Teff in K, numax/dnu in muHz.
 """
+import warnings
+
 import numpy as np
 
-from .photometry import bolometric_correction, extinction_from_ag
+from .photometry import (
+    bolometric_correction,
+    extinction_from_ag,
+    kepler_bolometric_correction,
+)
 
 # Array backend, swappable for a jax.jit-able forward pass:
 #   import jax.numpy as jnp
@@ -312,14 +318,52 @@ def amplitude_red_edge(L):
     return 8907.0 * L**-0.093
 
 
-def envelope_amplitude(M, L, Teff, bandpass="TESS"):
-    """Return the maximum radial-mode rms amplitude in a photometric band.
+def bolometric_amplitude(M, L, Teff):
+    """Return the maximum bolometric radial-mode RMS amplitude.
 
     Implements equations 16--18 of Ball et al. (2018), including the
     suppression factor near the red edge of the delta-Scuti instability
-    strip. The 2.1 ppm TESS zero-point is from Ball et al.; the 2.5 ppm
-    Kepler zero-point underlying the TESS response correction is given by
-    Campante et al. (2016).
+    strip.  Their 2.5 ppm Kepler zero-point is converted to a bolometric
+    amplitude with the Ballot et al. (2011) response correction.
+
+    Parameters
+    ----------
+    M, L : float or array-like
+        Mass and luminosity in solar units.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    Returns
+    -------
+    float or ndarray
+        Maximum bolometric radial-mode RMS amplitude in parts per million.
+    """
+    red_edge = amplitude_red_edge(L)
+    beta = 1.0 - xp.exp((Teff - red_edge) / 1250.0)
+    beta = xp.clip(beta, 0.0, 1.0)
+    kepler = (
+        A_ENV_SUN_KEPLER
+        * beta
+        * (L / M)
+        * (Teff / 5777.0) ** -2.0
+    )
+    return kepler * kepler_bolometric_correction(Teff, backend=xp)
+
+
+def _bandpass_envelope_amplitude(M, L, Teff, bandpass="TESS"):
+    """Evaluate the deprecated mission-specific envelope amplitude."""
+    bandpass = normalize_bandpass(bandpass)
+    bolometric = bolometric_amplitude(M, L, Teff)
+    correction = kepler_bolometric_correction(Teff, backend=xp)
+    response = _A_ENV_SUN[bandpass] / A_ENV_SUN_KEPLER
+    return bolometric * response / correction
+
+
+def envelope_amplitude(M, L, Teff, bandpass="TESS"):
+    """Return a mission-specific radial-mode RMS amplitude.
+
+    .. deprecated:: 0.2
+       Use :func:`bolometric_amplitude` and
+       :func:`asteroscale.photometry.convert_bolometric_amplitude` instead.
 
     Parameters
     ----------
@@ -328,19 +372,20 @@ def envelope_amplitude(M, L, Teff, bandpass="TESS"):
     Teff : float or array-like
         Effective temperature in kelvin.
     bandpass : {'TESS', 'Kepler'}, default='TESS'
-        Photometric response used for the amplitude calibration. Kepler
-        amplitudes are slightly larger because its response is bluer.
+        Photometric response used for the amplitude.
 
     Returns
     -------
     float or ndarray
-        Maximum radial-mode rms amplitude in parts per million.
+        Maximum radial-mode RMS amplitude in the selected response, in ppm.
     """
-    bandpass = normalize_bandpass(bandpass)
-    red_edge = amplitude_red_edge(L)
-    beta = 1.0 - xp.exp((Teff - red_edge) / 1250.0)
-    beta = xp.clip(beta, 0.0, 1.0)
-    return _A_ENV_SUN[bandpass] * beta * (L / M) * (Teff / 5777.0) ** -2.0
+    warnings.warn(
+        "envelope_amplitude(..., bandpass=...) is deprecated; use "
+        "bolometric_amplitude() and convert_bolometric_amplitude() instead.",
+        FutureWarning,
+        stacklevel=2,
+    )
+    return _bandpass_envelope_amplitude(M, L, Teff, bandpass=bandpass)
 
 
 def granulation_amplitude(numax, M):
@@ -636,7 +681,8 @@ DERIVED = {
     "logg": (logg, ("M", "R")),
     "rho": (mean_density, ("M", "R")),
     "FWHM_env": (envelope_fwhm, ("numax", "Teff")),
-    "A_env": (envelope_amplitude, ("M", "L", "Teff")),
+    "amplitude_bolometric": (bolometric_amplitude, ("M", "L", "Teff")),
+    "A_env": (_bandpass_envelope_amplitude, ("M", "L", "Teff")),
     "A_gran": (granulation_amplitude, ("numax", "M")),
     "b_gran_low": (granulation_frequency_low, ("numax",)),
     "b_gran_high": (granulation_frequency_high, ("numax",)),

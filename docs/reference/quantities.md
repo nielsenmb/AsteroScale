@@ -31,7 +31,7 @@ $1\,\mathrm{\mu Hz}=10^{-6}\,\mathrm{Hz}$.
 | `logg` | Base-10 surface gravity | dex, with $g$ in $\mathrm{cm\,s^{-2}}$ | `M`, `R` |
 | `rho` | Mean density | $\rho_\odot$ | `M`, `R` |
 | `FWHM_env` | Full width at half maximum of the oscillation envelope | $\mathrm{\mu Hz}$ | `numax`, `Teff` |
-| `A_env` | Maximum radial-mode RMS amplitude in the selected bandpass | ppm | `M`, `L`, `Teff` |
+| `amplitude_bolometric` | Maximum bolometric radial-mode RMS amplitude | ppm | `M`, `L`, `Teff` |
 | `A_gran` | Granulation RMS amplitude | ppm | `numax`, `M` |
 | `b_gran_low` | Lower granulation characteristic frequency | $\mathrm{\mu Hz}$ | `numax` |
 | `b_gran_high` | Higher granulation characteristic frequency | $\mathrm{\mu Hz}$ | `numax` |
@@ -58,3 +58,7 @@ citations, and accuracy limitations.
 Use `want="all"` to return every available quantity whose dependencies are
 part of the current problem. See {mod}`asteroscale.relations` for the relation
 registry and {doc}`../limitations` before interpreting precision results.
+
+`A_env` is retained temporarily as a deprecated mission-specific output. New
+code should request `amplitude_bolometric` and use
+{func}`asteroscale.convert_bolometric_amplitude` afterward.
