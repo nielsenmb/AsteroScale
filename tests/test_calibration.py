@@ -17,7 +17,6 @@ def test_default_scatter_covers_seismic_amplitude_and_granulation_relations():
         "numax",
         "dnu",
         "amplitude_bolometric",
-        "A_env",
         "A_gran",
         "b_gran_low",
         "b_gran_high",
@@ -63,10 +62,10 @@ def test_validity_checks_report_each_supported_domain():
         ["numax", "dnu", "amplitude_bolometric"],
     )
     assert set(report) == {"numax", "dnu", "amplitude_bolometric"}
-    assert report["numax"]["status"] == "partly_outside_calibration"
+    assert report["numax"]["status"] == "partly_outside_checked_bounds"
     assert report["dnu"]["fraction_within"] == pytest.approx(0.5)
     assert report["amplitude_bolometric"]["status"] == (
-        "partly_outside_calibration"
+        "partly_outside_checked_bounds"
     )
 
 
@@ -74,10 +73,10 @@ def test_outside_calibration_emits_a_warning():
     """Make extrapolation visible unless users explicitly suppress warnings."""
     report = {
         "dnu": {
-            "status": "outside_calibration",
+            "status": "outside_checked_bounds",
             "fraction_within": 0.0,
             "domain": "test domain",
         }
     }
-    with pytest.warns(UserWarning, match="dnu is outside calibration"):
+    with pytest.warns(UserWarning, match="dnu is outside checked bounds"):
         warn_outside_calibration(report)

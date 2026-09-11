@@ -48,11 +48,11 @@ def _metal_mass_fraction(FeH):
 
 
 def _mean_molecular_weight(FeH):
-    """Fully-ionized H+He mean molecular weight, mu = 4/(3X+1).
+    """Approximate neutral H+He mean molecular weight, mu = 4/(3X+1).
 
     Assumes primordial Y_p=0.248 and helium enrichment dY/dZ=1.0. This
-    ignores metals' contribution to free electrons -- fine near solar
-    metallicity, increasingly approximate for very metal-poor stars.
+    neglects metals in the particle count. It does not model photospheric
+    ionization or provide the full Viani et al. correction.
 
     Parameters
     ----------
@@ -62,7 +62,7 @@ def _mean_molecular_weight(FeH):
     Returns
     -------
     float or ndarray
-        Fully ionized mean molecular weight.
+        Approximate neutral mean molecular weight.
     """
     Z = _metal_mass_fraction(FeH)
     Y = 0.248 + 1.0 * Z
@@ -96,7 +96,7 @@ def f_numax(FeH):
     return xp.sqrt(mu / _MU_SUN)
 
 
-def numax(M, R, Teff, FeH):
+def numax(M, R, Teff, FeH, correction="mu"):
     """Predict the frequency of maximum oscillation power.
 
     Parameters
@@ -108,12 +108,18 @@ def numax(M, R, Teff, FeH):
     FeH : float or array-like
         Metallicity in dex relative to solar.
 
+    correction : {'mu', 'none'}, default='mu'
+        Approximate neutral molecular-weight correction or uncorrected scaling.
+
     Returns
     -------
     float or ndarray
         Frequency of maximum power in microhertz.
     """
-    return NUMAX_SUN * M / R**2 / xp.sqrt(Teff / TEFF_SUN) * f_numax(FeH)
+    if correction not in ("mu", "none"):
+        raise ValueError("numax correction must be 'mu' or 'none'.")
+    factor = f_numax(FeH) if correction == "mu" else 1.0
+    return NUMAX_SUN * M / R**2 / xp.sqrt(Teff / TEFF_SUN) * factor
 
 
 DNU_SUN = 135.1  # Huber et al. 2011, used to anchor the reference function below
@@ -151,7 +157,7 @@ def _dnu_ref_raw(Teff, FeH):
 _DNU_REF_NORM = DNU_SUN / _dnu_ref_raw(TEFF_SUN, 0.0)
 
 
-def dnu_ref(Teff, FeH):
+def dnu_ref(Teff, FeH, calibration="solar_anchored"):
     """Guggenberger et al. 2016 (MNRAS 460, 4277) Teff-[Fe/H] reference
     function, replacing the fixed solar Delta-nu in the classic relation.
     Calibrated for -1.0 < [Fe/H] < 0.5, 0.8-2.0 Msun, main sequence to cool
@@ -165,15 +171,21 @@ def dnu_ref(Teff, FeH):
     FeH : float or array-like
         Metallicity in dex relative to solar.
 
+    calibration : {'solar_anchored', 'guggenberger2016'}, default='solar_anchored'
+        Solar-renormalized reference function or original published coefficients.
+
     Returns
     -------
     float or ndarray
         Reference large separation in microhertz.
     """
-    return _dnu_ref_raw(Teff, FeH) * _DNU_REF_NORM
+    if calibration not in ("solar_anchored", "guggenberger2016"):
+        raise ValueError("Unknown dnu calibration; use solar_anchored or guggenberger2016.")
+    scale = _DNU_REF_NORM if calibration == "solar_anchored" else 1.0
+    return _dnu_ref_raw(Teff, FeH) * scale
 
 
-def dnu(M, R, Teff, FeH):
+def dnu(M, R, Teff, FeH, calibration="solar_anchored"):
     """Predict the large frequency separation.
 
     Parameters
@@ -185,12 +197,15 @@ def dnu(M, R, Teff, FeH):
     FeH : float or array-like
         Metallicity in dex relative to solar.
 
+    calibration : {'solar_anchored', 'guggenberger2016'}, default='solar_anchored'
+        Reference-function normalization convention.
+
     Returns
     -------
     float or ndarray
         Large frequency separation in microhertz.
     """
-    return dnu_ref(Teff, FeH) * xp.sqrt(M / R**3)
+    return dnu_ref(Teff, FeH, calibration=calibration) * xp.sqrt(M / R**3)
 
 
 def luminosity(R, Teff):
@@ -349,6 +364,27 @@ def bolometric_amplitude(M, L, Teff):
     return kepler * kepler_bolometric_correction(Teff, backend=xp)
 
 
+def _legacy_amplitude(amplitude_bolometric, Teff, bandpass="TESS"):
+    """Convert the canonical amplitude, retaining its latent scatter.
+
+    Parameters
+    ----------
+    amplitude_bolometric : float or array-like
+        Bolometric radial-mode RMS amplitude in ppm.
+    Teff : float or array-like
+        Effective temperature in kelvin.
+    bandpass : str
+        Legacy mission response.
+
+    Returns
+    -------
+    float or ndarray
+        Mission radial-mode RMS amplitude in ppm.
+    """
+    response = _A_ENV_SUN[normalize_bandpass(bandpass)] / A_ENV_SUN_KEPLER
+    return amplitude_bolometric * response / kepler_bolometric_correction(Teff, backend=xp)
+
+
 def _bandpass_envelope_amplitude(M, L, Teff, bandpass="TESS"):
     """Evaluate the deprecated mission-specific envelope amplitude."""
     bandpass = normalize_bandpass(bandpass)
@@ -401,7 +437,8 @@ def granulation_amplitude(numax, M):
     Returns
     -------
     float or ndarray
-        RMS granulation amplitude in parts per million.
+        RMS amplitude of each Kepler granulation component in ppm. The total
+        two-component RMS is sqrt(2) times this value; this is not bolometric.
     """
     return 3710.0 * numax**-0.613 * M**-0.26
 
@@ -682,7 +719,7 @@ DERIVED = {
     "rho": (mean_density, ("M", "R")),
     "FWHM_env": (envelope_fwhm, ("numax", "Teff")),
     "amplitude_bolometric": (bolometric_amplitude, ("M", "L", "Teff")),
-    "A_env": (_bandpass_envelope_amplitude, ("M", "L", "Teff")),
+    "A_env": (_legacy_amplitude, ("amplitude_bolometric", "Teff")),
     "A_gran": (granulation_amplitude, ("numax", "M")),
     "b_gran_low": (granulation_frequency_low, ("numax",)),
     "b_gran_high": (granulation_frequency_high, ("numax",)),

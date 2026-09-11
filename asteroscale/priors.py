@@ -27,6 +27,8 @@ class ParallaxPrior:
         length_scale_pc : float, default=1350.0
             Exponential distance scale in parsecs.
         """
+        if not np.isfinite(length_scale_pc) or length_scale_pc <= 0:
+            raise ValueError("length_scale_pc must be finite and positive.")
         self.length_scale_pc = length_scale_pc
         # Sensible physical bounds for callers that want them (e.g. the
         # point-estimate least-squares solve) -- not used by .ppf itself.

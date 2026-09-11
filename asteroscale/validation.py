@@ -113,7 +113,7 @@ def validate_want(want):
     normalize_want(want)
 
 
-def validate_given(given):
+def validate_given(given, input_mode="propagate"):
     """Validates given's structure and, for plain-scalar or (mean, error)
     entries, checks physical plausibility. Custom distribution objects
     (anything with .logpdf/.ppf) are trusted as-is -- there's no generic
@@ -121,6 +121,8 @@ def validate_given(given):
 
     Parameters
     ----------
+    input_mode : {'propagate', 'likelihood'}, default='propagate'
+        Likelihood means need only be finite; exact values remain physical.
     given : dict
         Mapping from quantity names to exact values, ``(mean, error)`` pairs,
         or distribution-like objects.
@@ -159,7 +161,10 @@ def validate_given(given):
                 )
             mean, err = value
             _check_error(name, err)
-            _check_value(name, mean)
+            if not np.isfinite(mean):
+                raise ValueError(f"given[{name!r}] measurement must be finite.")
+            if input_mode != "likelihood":
+                _check_value(name, mean)
         elif isinstance(value, (int, float, np.floating, np.integer)):
             _check_value(name, value)
         elif not (hasattr(value, "logpdf") or hasattr(value, "ppf")):
@@ -233,43 +238,4 @@ def _check_value(name, value):
             "Double check units and value -- if this is intentional, "
             "the result may still be informative but treat it cautiously.",
             stacklevel=4,
-        )
-
-
-def check_point_estimate_residuals(result, targets, tol=1e-3):
-    """Warn if the point-estimate least-squares solve didn't actually
-    satisfy the given constraints -- most likely because they're mutually
-    inconsistent (no combination of the free parameters can match all of
-    them at once), rather than a fixable optimizer failure.
-
-    Parameters
-    ----------
-    result : scipy.optimize.OptimizeResult
-        Result from the least-squares optimizer.
-    targets : dict
-        Mapping from constrained quantity names to target values.
-    tol : float, default=1e-3
-        Maximum residual relative to the largest target scale.
-
-    Warns
-    -----
-    UserWarning
-        If the optimized solution does not satisfy the targets.
-    """
-    if len(result.fun) == 0:
-        return
-    max_target = max(1.0, max(abs(v) for v in targets.values()))
-    max_resid = np.max(np.abs(result.fun))
-    if max_resid > tol * max_target:
-        detail = ", ".join(
-            f"{name}: target={target:.6g}"
-            for name, target in targets.items()
-        )
-        warnings.warn(
-            f"Point estimate did not fully satisfy the given constraints "
-            f"(largest residual {max_resid:.4g}). The given values may be "
-            f"physically inconsistent with each other, or the free "
-            f"parameters couldn't reach a solution within their prior "
-            f"bounds. Targets were: {detail}.",
-            stacklevel=3,
         )

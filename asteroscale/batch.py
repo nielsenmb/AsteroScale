@@ -11,6 +11,8 @@ classic source of deadlocks. It's a reasonable default even without JAX.
 """
 import multiprocessing
 import os
+
+from threadpoolctl import threadpool_limits
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
@@ -22,6 +24,8 @@ def _init_worker():
     # multiple threads *per process* for linear algebra, and N worker
     # processes each doing that oversubscribes the machine's cores,
     # eating into (or reversing) the speedup from parallelizing at all.
+    global _worker_thread_limit
+    _worker_thread_limit = threadpool_limits(limits=1)
     for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
                 "NUMEXPR_NUM_THREADS"):
         os.environ[var] = "1"
@@ -40,15 +44,11 @@ def _solve_one(args):
     tuple
         Target identifier, result or ``None``, and error string or ``None``.
     """
-    from .solver import Solver  # imported here, not at module level -- see
-    # _init_worker: numpy/scipy need to see the thread-count env vars
-    # *before* they're imported, and with the 'spawn' start method each
-    # worker is a fresh interpreter, so this runs after _init_worker but
-    # before Solver (and therefore numpy) is ever touched in this process.
+    from .solver import Solver
 
     target_id, given, want, solver_kwargs, seed = args
-    solver = Solver(seed=seed, **solver_kwargs)
     try:
+        solver = Solver(seed=seed, **solver_kwargs)
         result = solver.solve(given, want)
         return target_id, result, None
     except Exception as exc:
@@ -75,6 +75,8 @@ def solve_many(
     n_jobs=None,
     base_seed=0,
     show_progress=False,
+    dnu_calibration="solar_anchored",
+    numax_correction="mu",
 ):
     
     """Solve independent targets in parallel.
@@ -100,6 +102,10 @@ def solve_many(
         Deprecated compatibility setting for the legacy ``A_env`` output.
     input_mode : {'propagate', 'likelihood'}, default='propagate'
         Interpretation of uncertain fundamental inputs.
+    dnu_calibration : {'solar_anchored', 'guggenberger2016'}, optional
+        Adopted solar renormalization or the original published reference function.
+    numax_correction : {'mu', 'none'}, optional
+        Approximate neutral molecular-weight correction or uncorrected scaling.
     population_prior : str, path-like or PopulationGMM, optional
         Shared correlated stellar-population GMM used in likelihood mode.
         Custom model objects must be picklable.
@@ -138,6 +144,8 @@ def solve_many(
                          relation_scatter=relation_scatter,
                          photometric_error_floor=photometric_error_floor,
                          warn_validity=warn_validity,
+                         dnu_calibration=dnu_calibration,
+                         numax_correction=numax_correction,
                         )
     
     items = list(targets.items())

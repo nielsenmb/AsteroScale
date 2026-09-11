@@ -239,5 +239,5 @@ def test_validity_report_is_returned_and_stored():
         ["dnu"],
         return_validity=True,
     )
-    assert result["_validity"]["dnu"]["status"] == "outside_calibration"
+    assert result["_validity"]["dnu"]["status"] == "outside_checked_bounds"
     assert solver.last_validity == result["_validity"]

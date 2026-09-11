@@ -1,9 +1,9 @@
 # Sampling, uncertainties, and priors
 
 An exact calculation and an uncertain calculation answer slightly different
-questions. When every supplied value is a plain number, AsteroScale evaluates
+questions. Without an active conditional population prior, when every supplied value is a plain number, AsteroScale evaluates
 or inverts the relations and returns scalar point estimates. When any supplied
-value has an uncertainty, AsteroScale uses Dynesty nested sampling and returns
+value has an uncertainty, AsteroScale samples (directly when no likelihood remains, otherwise using Dynesty) and returns
 arrays of samples. A histogram of an output array approximates its probability
 distribution.
 
@@ -169,3 +169,7 @@ most convenient run.
 Advanced users can replace individual priors with `Solver(priors={...})` and
 request the raw Dynesty result with `return_results=True`. The
 {doc}`../tutorials/advanced-workflows` notebook gives worked examples.
+
+Use `return_metadata=True` to retain the actual mode and calibration configuration.
+See [scientific assumptions](scientific-assumptions.md) before interpreting the bundled
+GMM as a complete nearby population or the validity flags as scientific certification.

@@ -32,7 +32,7 @@ $1\,\mathrm{\mu Hz}=10^{-6}\,\mathrm{Hz}$.
 | `rho` | Mean density | $\rho_\odot$ | `M`, `R` |
 | `FWHM_env` | Full width at half maximum of the oscillation envelope | $\mathrm{\mu Hz}$ | `numax`, `Teff` |
 | `amplitude_bolometric` | Maximum bolometric radial-mode RMS amplitude | ppm | `M`, `L`, `Teff` |
-| `A_gran` | Granulation RMS amplitude | ppm | `numax`, `M` |
+| `A_gran` | Per-component Kepler granulation RMS amplitude | ppm | `numax`, `M` |
 | `b_gran_low` | Lower granulation characteristic frequency | $\mathrm{\mu Hz}$ | `numax` |
 | `b_gran_high` | Higher granulation characteristic frequency | $\mathrm{\mu Hz}$ | `numax` |
 | `d` | Distance | pc | `plx` |

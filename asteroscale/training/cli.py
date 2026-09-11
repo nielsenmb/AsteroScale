@@ -99,6 +99,10 @@ def build_parser():
     parser.add_argument("--max-distance-pc", type=float)
     parser.add_argument("--teff-min", type=float)
     parser.add_argument("--teff-max", type=float)
+    parser.add_argument("--radius-min", type=float)
+    parser.add_argument("--radius-max", type=float)
+    parser.add_argument("--chunk-size", type=int, default=100_000)
+    parser.add_argument("--field-areas-deg2", nargs="+", type=float)
     parser.add_argument(
         "--normalized-catalogue",
         type=Path,
@@ -138,10 +142,15 @@ def main(argv=None):
             if args.teff_min is None or args.teff_max is None:
                 raise SystemExit("--teff-min and --teff-max must be used together.")
             teff_range = (args.teff_min, args.teff_max)
+        if (args.radius_min is None) != (args.radius_max is None):
+            raise SystemExit("--radius-min and --radius-max must be used together.")
         catalogue = read_trilegal(
             args.inputs,
             max_distance_pc=args.max_distance_pc,
             teff_range=teff_range,
+            R_range=None if args.radius_min is None else (args.radius_min, args.radius_max),
+            chunk_size=args.chunk_size,
+            field_areas_deg2=args.field_areas_deg2,
         )
 
     if args.metadata is not None:

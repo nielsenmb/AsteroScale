@@ -2,7 +2,6 @@
 
 import numpy as np
 
-from .relations import DERIVED
 
 
 # Fractional one-sigma scatter. The amplitude values are empirical scatter
@@ -13,7 +12,6 @@ DEFAULT_RELATION_SCATTER = {
     "numax": 0.02,
     "dnu": 0.015,
     "amplitude_bolometric": 0.25,
-    "A_env": 0.25,
     "A_gran": 0.144,
     "b_gran_low": 0.102,
     "b_gran_high": 0.087,
@@ -56,7 +54,14 @@ def normalize_relation_scatter(scatter, base=None):
     else:
         raise TypeError("relation_scatter must be a number, dictionary, or None.")
 
-    unknown = set(updates) - set(DERIVED)
+    updates = dict(updates)
+    if "A_env" in updates:
+        alias = updates.pop("A_env")
+        if "amplitude_bolometric" in updates and updates["amplitude_bolometric"] != alias:
+            raise ValueError("A_env and amplitude_bolometric share one scatter parameter.")
+        updates["amplitude_bolometric"] = alias
+    allowed = set(DEFAULT_RELATION_SCATTER) | {"FWHM_env"}
+    unknown = set(updates) - allowed
     if unknown:
         raise KeyError(f"Unknown relation-scatter name(s): {sorted(unknown)}")
     for name, value in updates.items():

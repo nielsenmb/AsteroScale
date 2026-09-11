@@ -220,3 +220,6 @@ TRILEGAL should be cited via
 [Girardi et al. (2005)](https://ui.adsabs.harvard.edu/abs/2005A%26A...436..895G/abstract).
 The PARSEC/COLIBRI ingredients used by a particular service version should
 also be recorded and cited from that run's documentation.
+
+See [scientific assumptions and review fixes](../concepts/scientific-assumptions.md) for calibration sensitivity,
+statistical safeguards, and the deliberate omission of the TRILEGAL l=0, b=0 field.

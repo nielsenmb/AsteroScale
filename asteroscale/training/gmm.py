@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -134,6 +135,38 @@ class PopulationGMM:
     support_bounds: np.ndarray
     metadata: dict
 
+    def __post_init__(self):
+        """Validate dimensions, finite parameters, weights and covariance matrices."""
+        for name in ("weights", "means", "covariances", "coordinate_centre",
+                     "coordinate_scale", "support_bounds"):
+            value = np.asarray(getattr(self, name), dtype=float)
+            if not np.all(np.isfinite(value)):
+                raise ValueError(f"Population model {name} contains non-finite values.")
+            setattr(self, name, value)
+        count = self.weights.size
+        shapes = {"weights": (count,), "means": (count, 4),
+                  "covariances": (count, 4, 4), "coordinate_centre": (4,),
+                  "coordinate_scale": (4,), "support_bounds": (4, 2)}
+        for name, shape in shapes.items():
+            if getattr(self, name).shape != shape:
+                raise ValueError(f"Population model {name} must have shape {shape}.")
+        if (count == 0 or np.any(self.weights <= 0)
+                or not np.isclose(self.weights.sum(), 1, rtol=1e-8, atol=1e-12)):
+            raise ValueError("Population weights must be positive and sum to one.")
+        self.weights = self.weights / self.weights.sum()
+        if np.any(self.coordinate_scale <= 0):
+            raise ValueError("Population coordinate scales must be positive.")
+        if np.any(self.support_bounds[:, 0] >= self.support_bounds[:, 1]):
+            raise ValueError("Population support bounds must be increasing.")
+        if not np.allclose(self.covariances, self.covariances.swapaxes(-1, -2)):
+            raise ValueError("Population covariance matrices must be symmetric.")
+        try:
+            np.linalg.cholesky(self.covariances)
+        except np.linalg.LinAlgError as error:
+            raise ValueError("Population covariance matrices must be positive definite.") from error
+        if not isinstance(self.metadata, dict):
+            raise ValueError("Population metadata must be a dictionary.")
+
     def marginal_condition(
         self,
         coordinate_names,
@@ -205,6 +238,8 @@ class PopulationGMM:
                 [conditioned[name] for name in fixed_names],
                 dtype=float,
             )
+            if not np.all(np.isfinite(fixed_values)):
+                raise ValueError("Conditioned population coordinates must be finite.")
             fixed_standardized = (
                 fixed_values - self.coordinate_centre[fixed]
             ) / self.coordinate_scale[fixed]
@@ -278,6 +313,10 @@ class PopulationGMM:
         coordinates = np.asarray(coordinates, dtype=float)
         scalar = coordinates.ndim == 1
         coordinates = np.atleast_2d(coordinates)
+        if coordinates.ndim != 2 or coordinates.shape[1] != 4:
+            raise ValueError("coordinates must have shape (4,) or (n_samples, 4).")
+        if not np.all(np.isfinite(coordinates)):
+            raise ValueError("coordinates must be finite.")
         if batch_size < 1:
             raise ValueError("batch_size must be positive.")
         standardized = (
@@ -296,7 +335,21 @@ class PopulationGMM:
         return density[0] if scalar else density
 
     def sample(self, size, random_state=None):
-        """Draw samples in the physical training coordinates."""
+        """Draw samples in the physical training coordinates.
+
+        Parameters
+        ----------
+        size : int
+            Number of rows to draw.
+        random_state : int or numpy.random.Generator, optional
+            Random seed or generator.
+
+        Returns
+        -------
+        ndarray
+            Array of shape (size, 4), in logarithmic mass, radius, temperature,
+            and linear metallicity coordinates.
+        """
         if size < 1:
             raise ValueError("size must be at least one.")
         generator = np.random.default_rng(random_state)
@@ -313,7 +366,13 @@ class PopulationGMM:
         return standardized * self.coordinate_scale + self.coordinate_centre
 
     def save(self, path):
-        """Save the model and its provenance to a compressed NPZ file."""
+        """Save the model and its provenance to a compressed NPZ file.
+
+        Parameters
+        ----------
+        path : path-like
+            Destination NPZ filename; parent directories are created as needed.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
@@ -332,8 +391,27 @@ class PopulationGMM:
 
     @classmethod
     def load(cls, path):
-        """Load a model saved by :meth:`save`."""
+        """Load a model saved by :meth:`save`.
+
+        Parameters
+        ----------
+        path : path-like
+            Source NPZ filename.
+
+        Returns
+        -------
+        PopulationGMM
+            Validated model with numerical arrays and metadata.
+
+        Raises
+        ------
+        ValueError
+            If the format, coordinates or numerical parameters are unsupported.
+        """
         with np.load(path, allow_pickle=False) as data:
+            if ("format_version" not in data or data["format_version"].shape != ()
+                    or data["format_version"].item() != 1):
+                raise ValueError("Unsupported population model format_version.")
             names = tuple(data["coordinate_names"].tolist())
             if names != COORDINATE_NAMES:
                 raise ValueError(f"Unsupported population coordinates: {names}")
@@ -374,6 +452,7 @@ def _fit_once(
     covariances = np.repeat(covariance[None, :, :], n_components, axis=0)
     mixture_weight = np.full(n_components, 1.0 / n_components)
     previous = -np.inf
+    converged = False
 
     for iteration in range(1, max_iter + 1):
         component_mass = np.zeros(n_components)
@@ -421,9 +500,18 @@ def _fit_once(
 
         objective = objective_sum / sample_weight.sum()
         if objective - previous < tolerance and objective >= previous:
+            converged = True
             break
         previous = objective
-    return mixture_weight, means, covariances, objective, iteration
+    # Score the parameters actually returned, after the final M-step.
+    objective_sum = 0.0
+    for start in range(0, count, batch_size):
+        stop = min(start + batch_size, count)
+        joint = _log_gaussian_density(values[start:stop], means, covariances)
+        scores = logsumexp(joint + np.log(mixture_weight), axis=1)
+        objective_sum += np.sum(sample_weight[start:stop] * scores)
+    objective = objective_sum / sample_weight.sum()
+    return mixture_weight, means, covariances, objective, iteration, converged
 
 
 def fit_weighted_gmm(
@@ -480,7 +568,7 @@ def fit_weighted_gmm(
         raise ValueError("n_components must be between one and n_samples.")
     if n_init < 1 or max_iter < 1 or batch_size < 1:
         raise ValueError("n_init, max_iter, and batch_size must be positive.")
-    if tolerance <= 0.0 or reg_covar <= 0.0:
+    if not np.isfinite(tolerance + reg_covar) or tolerance <= 0.0 or reg_covar <= 0.0:
         raise ValueError("tolerance and reg_covar must be positive.")
 
     if sample_weight is None:
@@ -515,7 +603,9 @@ def fit_weighted_gmm(
         )
         if best is None or result[3] > best[3]:
             best = result
-    mixture_weight, means, covariances, objective, iterations = best
+    mixture_weight, means, covariances, objective, iterations, converged = best
+    if not converged:
+        warnings.warn("Selected GMM initialization reached max_iter without convergence.")
     model_metadata = dict(metadata or {})
     model_metadata.update(
         {
@@ -524,6 +614,10 @@ def fit_weighted_gmm(
             "effective_sample_size": _effective_sample_size(sample_weight),
             "training_mean_log_density_standardized": float(objective),
             "em_iterations": int(iterations),
+            "em_converged": bool(converged),
+            "fit_settings": {"n_init": n_init, "max_iter": max_iter,
+                             "tolerance": tolerance, "reg_covar": reg_covar,
+                             "batch_size": batch_size},
             "random_state": random_state,
         }
     )
@@ -554,6 +648,23 @@ def fit_candidate_models(
 
     The selected component count is the smallest whose held-out mean log
     density is within ``selection_tolerance`` of the best candidate.
+
+    Parameters
+    ----------
+    coordinates : array-like, shape (n_samples, 4)
+        Population training coordinates.
+    sample_weight : array-like
+        Positive relative row weights.
+    component_counts : sequence of int
+        Candidate component counts.
+    validation_fraction : float, default=0.2
+        Fraction of rows reserved for held-out scoring.
+    selection_tolerance : float, default=0.01
+        Allowed difference from the best mean validation log density.
+    random_state : int, default=0
+        Seed controlling split, initializations and refit.
+    **fit_kwargs
+        Additional options passed to :func:`fit_weighted_gmm`.
 
     Returns
     -------
@@ -608,6 +719,8 @@ def fit_candidate_models(
         report.append(
             {
                 "n_components": count,
+                "em_converged": model.metadata["em_converged"],
+                "em_iterations": model.metadata["em_iterations"],
                 "validation_mean_log_density": validation_mean,
                 "bic": float(parameters * np.log(effective_n) - 2.0 * train_total),
             }

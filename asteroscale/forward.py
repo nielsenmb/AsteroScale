@@ -77,7 +77,10 @@ def required_relations(names):
     return [name for name in DERIVED if name in required]
 
 
-def evaluate_relations(fundamentals, bandpass="TESS", relation_offsets=None):
+def evaluate_relations(
+    fundamentals, bandpass="TESS", relation_offsets=None,
+    dnu_calibration="solar_anchored", numax_correction="mu",
+):
     """Evaluate all scaling relations in dependency order.
 
     Parameters
@@ -86,6 +89,10 @@ def evaluate_relations(fundamentals, bandpass="TESS", relation_offsets=None):
         Fundamental quantities, containing scalar or array values.
     bandpass : {'TESS', 'Kepler'}, default='TESS'
         Photometric response used for the oscillation-envelope amplitude.
+    dnu_calibration : str, default='solar_anchored'
+        Reference-function normalization; alternatively 'guggenberger2016'.
+    numax_correction : str, default='mu'
+        Approximate molecular-weight correction; alternatively 'none'.
     relation_offsets : dict, optional
         Additive natural-log offsets applied to named positive relations.
         Scalar or array offsets can represent latent calibration scatter.
@@ -121,6 +128,10 @@ def evaluate_relations(fundamentals, bandpass="TESS", relation_offsets=None):
             output["A_BP"], output["A_RP"] = values[..., 0], values[..., 1]
             continue
         kwargs = {"bandpass": bandpass} if name == "A_env" else {}
+        if name == "dnu":
+            kwargs["calibration"] = dnu_calibration
+        elif name == "numax":
+            kwargs["correction"] = numax_correction
         value = function(*(output[arg] for arg in arguments), **kwargs)
         if name in relation_offsets:
             value = value * relations.xp.exp(relation_offsets[name])
