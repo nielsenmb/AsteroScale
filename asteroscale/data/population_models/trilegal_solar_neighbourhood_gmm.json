@@ -33,9 +33,14 @@
   ],
   "metadata": {
     "catalogue": {
+      "R_range": [
+        0.09,
+        1000.0
+      ],
       "adapter": "trilegal",
       "max_distance_pc": 1000.0,
       "metallicity_interpretation": "mh",
+      "radius_cut_provenance": "Recorded in examples/fitting-a-population-gmm.ipynb; raw catalogues unavailable for revalidation.",
       "sources": [
         "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l135b+41.81.dat",
         "/home/ADF/nielsemb/work/repos/AsteroScale/asteroscale/data/trilegal/l135b-41.81.dat",
@@ -59,17 +64,40 @@
     "generation": {
       "av_at_infinity_mag": 0.0,
       "binary_fraction": 0.3,
-      "binary_output_representation": "VERIFY FROM SUBMITTED FORM",
-      "field_area_deg2": 10.0,
+      "binary_output_representation": null,
+      "field_area_deg2": null,
+      "field_area_note": "Earlier 10 deg2 template value removed; per-file submitted areas are unverified.",
       "limiting_magnitude_first_filter": 20.0,
       "metallicity_note": "TRILEGAL [M/H] stored in the feh coordinate",
       "n_fields": 11,
+      "omitted_fields": [
+        {
+          "attempted_area_deg2": 0.5,
+          "b_deg": 0.0,
+          "intentional": true,
+          "l_deg": 0.0,
+          "reason": "Gigabytes of raw output even at 0.5 deg2; smaller common fields yielded too few stars in other directions.",
+          "weight_compensation": "none"
+        }
+      ],
       "photometric_system": "Gaia EDR3 (Vega)",
       "synthesis_code": "TRILEGAL",
       "version": "1.6"
     },
     "n_components": 256,
     "n_training_rows": 20913,
+    "provenance_review": {
+      "numerical_model_changed": false,
+      "raw_catalogues_available": false,
+      "scientific_status": "experimental incomplete-direction, magnitude-limited, dust-free nearby population",
+      "unresolved": [
+        "actual per-file areas",
+        "binary output representation",
+        "raw file checksums and counts",
+        "historical EM convergence",
+        "alpha-enhanced M/H versus Fe/H"
+      ]
+    },
     "random_state": 2026,
     "selection": {
       "candidate_results": [

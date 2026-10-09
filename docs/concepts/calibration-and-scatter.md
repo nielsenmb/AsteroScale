@@ -7,7 +7,7 @@ adds independent, multiplicative log-normal offsets to calibrated empirical
 relations when a problem is sampled. The `fast` and `standard` presets use zero
 relation scatter by default.
 
-The calibrated fractional one-sigma values used by `precise` are:
+The adopted fractional one-sigma values used by `precise` are:
 
 | Relation | Default scatter | Motivation |
 |---|---:|---|
@@ -80,7 +80,7 @@ inside each adopted domain. A warning is a request to inspect extrapolation,
 not proof that every returned sample is unusable. Warnings can be disabled with
 `warn_validity=False` after checking the cause. AsteroScale does not sample
 evolutionary state, so a validity check cannot by itself distinguish an RGB
-star from a cool main-sequence star.
+star from a core-helium-burning star.
 
 ## Numerical benchmark stars
 
@@ -101,3 +101,6 @@ The eclipsing-binary case is valuable because its mass and radius are dynamical
 rather than inferred from the same seismic scaling relations. Sources for the
 documented comparison stars are listed on the {doc}`../reference/references`
 page.
+
+See [scientific assumptions and review fixes](scientific-assumptions.md) for calibration sensitivity,
+statistical safeguards, and the deliberate omission of the TRILEGAL l=0, b=0 field.

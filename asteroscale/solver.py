@@ -109,11 +109,61 @@ def _normalize_photometric_error_floor(value):
     return value
 
 
+def _gaussian_parameters(value):
+    """Recognize supported Gaussian measurement representations.
+
+    Parameters
+    ----------
+    value : tuple or object
+        Measurement distribution.
+
+    Returns
+    -------
+    tuple or None
+        Mean and standard deviation for a Gaussian, otherwise None.
+    """
+    if isinstance(value, tuple):
+        return value
+    if getattr(getattr(value, "dist", None), "name", None) == "norm":
+        return float(value.mean()), float(value.std())
+    if type(value).__module__.startswith("baldr") and type(value).__name__ == "Normal":
+        return float(value.loc), float(value.scale)
+    return None
+
+
+def _validate_physical_draws(fundamentals):
+    """Reject invalid latent draws before evaluating stellar relations.
+
+    Parameters
+    ----------
+    fundamentals : dict
+        Physical latent values, scalar or arrays.
+
+    Raises
+    ------
+    ValueError
+        If samples are non-finite or violate physical support.
+    """
+    for name, value in fundamentals.items():
+        array = np.asarray(value)
+        invalid = ~np.isfinite(array)
+        if name in {"M", "R", "Teff", "plx"}:
+            invalid |= array <= 0
+        elif name == "A_G":
+            invalid |= array < 0
+        if np.any(invalid):
+            raise ValueError(
+                f"Distribution for {name} produced invalid physical draws. "
+                "Use a distribution with physical support, or use likelihood mode "
+                "for noisy measurements with an independent physical prior."
+            )
+
+
 def _apply_photometric_error_floor(given, floor):
     """Add model uncertainty in quadrature to Gaussian magnitude inputs.
 
-    Custom distribution objects are left unchanged because their scale cannot
-    be modified generically.
+    Supported Gaussian objects are converted to tuple form. Other custom
+    distributions are left unchanged with a warning.
 
     Parameters
     ----------
@@ -132,9 +182,15 @@ def _apply_photometric_error_floor(given, floor):
     adjusted = dict(given)
     for name in PHOTOMETRIC_MAGNITUDES & given.keys():
         value = given[name]
-        if isinstance(value, tuple) and len(value) == 2:
-            mean, error = value
+        gaussian = _gaussian_parameters(value)
+        if gaussian is not None:
+            mean, error = gaussian
             adjusted[name] = (mean, float(np.hypot(error, floor)))
+        elif hasattr(value, "logpdf") or hasattr(value, "ppf"):
+            warnings.warn(
+                f"Photometric error floor was not applied to custom {name} distribution; "
+                "include model uncertainty yourself or supply a supported Gaussian."
+            )
     return adjusted
 
 
@@ -333,7 +389,7 @@ class Solver:
     priors : dict, optional
         Distributions replacing entries in :data:`DEFAULT_PRIORS`.
     preset : {'standard', 'fast', 'precise'}, default='standard'
-        Named Dynesty accuracy/runtime configuration, precise is lower but
+        Named Dynesty accuracy/runtime configuration, precise is slower but
         provides more samples and smoother posteriors.
     nlive : int, optional
         Override the preset's number of live points.
@@ -349,6 +405,10 @@ class Solver:
         corresponding population priors. ``'likelihood'`` treats them as
         measurement likelihoods and retains the population priors. This is
         independent of the Dynesty accuracy ``preset``.
+    dnu_calibration : {'solar_anchored', 'guggenberger2016'}, optional
+        Adopted solar renormalization or the original published reference function.
+    numax_correction : {'mu', 'none'}, optional
+        Approximate neutral molecular-weight correction or uncorrected scaling.
     population_prior : str, path-like or PopulationGMM, optional
         Correlated GMM prior for mass, radius, effective temperature, and
         metallicity. Pass ``'trilegal_solar_neighbourhood'`` for the bundled
@@ -363,13 +423,14 @@ class Solver:
     relation_scatter : float or dict, optional
         Fractional intrinsic scatter for empirical relations. By default,
         scatter is disabled for the ``fast`` and ``standard`` presets and the
-        calibrated defaults are used for ``precise``. A scalar applies to
+        adopted defaults are used for ``precise``. A scalar applies to
         every calibrated relation; a dictionary overrides the named values
         for the selected preset. Zero disables intrinsic scatter.
     photometric_error_floor : float, default=0.02
         Synthetic-photometry model uncertainty in magnitudes, added in
         quadrature to ``(value, uncertainty)`` magnitude constraints. Set to
-        zero to disable. Custom distribution inputs are not altered.
+        zero to disable. Supported Gaussian objects receive the same floor;
+        other distributions warn.
     warn_validity : bool, default=True
         Warn when evaluated samples leave an adopted calibration domain.
     """
@@ -391,6 +452,8 @@ class Solver:
         relation_scatter=None,
         photometric_error_floor=DEFAULT_PHOTOMETRIC_ERROR_FLOOR,
         warn_validity=True,
+        dnu_calibration="solar_anchored",
+        numax_correction="mu",
     ):
         """Initialize a stellar-property solver.
 
@@ -413,6 +476,10 @@ class Solver:
             output.
         input_mode : {'propagate', 'likelihood'}, default='propagate'
             Statistical interpretation of uncertain fundamental inputs.
+        dnu_calibration : {'solar_anchored', 'guggenberger2016'}, optional
+            Solar renormalization or the original published reference function.
+        numax_correction : {'mu', 'none'}, optional
+            Approximate neutral molecular-weight correction or uncorrected scaling.
         population_prior : str, path-like or PopulationGMM, optional
             Correlated stellar-population GMM. The built-in name is
             ``'trilegal_solar_neighbourhood'``. The model is active only in
@@ -420,16 +487,28 @@ class Solver:
         relation_scatter : float or dict, optional
             Fractional intrinsic scatter for empirical relations. The default
             is zero for the ``fast`` and ``standard`` presets and the
-            calibrated relation scatter for ``precise``.
+            adopted relation scatter for ``precise``.
         photometric_error_floor : float, default=0.02
             Synthetic-photometry model uncertainty in magnitudes, added in
             quadrature to Gaussian magnitude constraints.
         warn_validity : bool, default=True
             Warn about samples outside adopted calibration domains.
         """
+        if dnu_calibration not in ("solar_anchored", "guggenberger2016"):
+            raise ValueError("Unknown dnu_calibration.")
+        if numax_correction not in ("mu", "none"):
+            raise ValueError("Unknown numax_correction.")
+        self.dnu_calibration = dnu_calibration
+        self.numax_correction = numax_correction
+        unknown = set(priors or {}) - set(FUNDAMENTAL)
+        if unknown:
+            raise KeyError(f"Unknown fundamental prior name(s): {sorted(unknown)}")
         self._custom_prior_names = frozenset((priors or {}).keys())
         priors = {**DEFAULT_PRIORS, **(priors or {})}
         self.priors = {k: _as_distribution(v) for k, v in priors.items()}
+        for name, prior in self.priors.items():
+            if not callable(getattr(prior, "ppf", None)):
+                raise TypeError(f"Prior for {name!r} must provide ppf().")
         self.population_prior = load_population_prior(population_prior)
         self.settings = get_sampler_settings(
             preset,
@@ -462,6 +541,7 @@ class Solver:
         self._last_relation_scatter = dict(self.relation_scatter)
         self._last_was_sampled = False
         self.last_validity = {}
+        self.last_metadata = {}
 
     def _forward(self, fundamentals, bandpass=None, relation_offsets=None):
         """Evaluate available relations for fundamental parameters.
@@ -485,6 +565,8 @@ class Solver:
             fundamentals,
             bandpass=bandpass,
             relation_offsets=relation_offsets,
+            dnu_calibration=self.dnu_calibration,
+            numax_correction=self.numax_correction,
         )
 
     def _active_scatter(self, names, scatter):
@@ -559,6 +641,29 @@ class Solver:
         dict
             Calibration-domain report.
         """
+        self.last_metadata["relation_scatter"] = dict(relation_scatter)
+        self.last_metadata["sampled"] = bool(was_sampled)
+        self.last_metadata["photometric_error_floor"] = getattr(
+            self, "_current_photometric_floor", self.photometric_error_floor
+        )
+        if self.last_metadata.get("population_prior_active"):
+            masks = []
+            checked = []
+            for name in POPULATION_FUNDAMENTALS:
+                if name not in fundamentals:
+                    continue
+                index = list(POPULATION_COORDINATES).index(name)
+                values = to_population_coordinate(name, fundamentals[name])
+                low, high = self.population_prior.support_bounds[index]
+                masks.append((np.asarray(values) >= low) & (np.asarray(values) <= high))
+                checked.append(name)
+            if masks:
+                within = np.logical_and.reduce(np.broadcast_arrays(*masks))
+                self.last_metadata["population_support"] = {
+                    "checked_coordinates": checked,
+                    "fraction_inside_training_box": float(np.mean(within)),
+                    "note": "Projected training box only; stellar-manifold support is unverified.",
+                }
         self._last_fund = fundamentals
         self._last_bandpass = bandpass
         self._last_relation_offsets = offsets
@@ -601,6 +706,15 @@ class Solver:
             Central values for an exact inversion, or predictive arrays when
             exact fundamentals are propagated through uncertain relations.
         """
+        central = self._forward(fundamentals, bandpass=bandpass)
+        for name, target in derived_targets.items():
+            if not np.isclose(central[name], target, rtol=1e-6, atol=1e-8):
+                raise ValueError(
+                    f"Inconsistent exact constraint {name}: target={target}, "
+                    f"prediction={central[name]}."
+                )
+        if sample_relation_scatter and derived_targets:
+            raise ValueError("sample_relation_scatter is unsupported for exact inversions.")
         active_names = list(want) + list(derived_targets)
         active_relations = required_relations(active_names)
         scatter_relations = self._active_scatter(want, relation_scatter)
@@ -718,16 +832,19 @@ class Solver:
                 return_validity,
             )
 
-        if not derived_targets:
+        if len(derived_targets) < len(free):
             raise ValueError(
                 f"Not enough information for a point estimate: {free} are "
-                "unconstrained and no derived-quantity targets were given. "
+                "not determined by enough independent derived targets. "
                 "Provide the missing quantities directly, or give enough "
                 "derived-quantity constraints to solve for them."
             )
 
         x0 = np.array([self.priors[p].ppf(0.5) for p in free])
         bounds = [self._bounds_for(p) for p in free]
+        bounds = [(max(low, 1e-12) if name in {"M", "R", "Teff", "plx"}
+                   else max(low, 0.) if name == "A_G" else low, high)
+                  for name, (low, high) in zip(free, bounds)]
         lo, hi = zip(*bounds)
 
         def residuals(x):
@@ -746,10 +863,21 @@ class Solver:
             theta = dict(zip(free, x))
             theta.update(fixed_fund)
             full = self._forward(theta, bandpass=bandpass)
-            return [full[name] - target for name, target in derived_targets.items()]
+            return [(full[name] - target) / max(abs(target), 1.0)
+                    for name, target in derived_targets.items()]
 
-        result = optimize.least_squares(residuals, x0, bounds=(lo, hi))
-        validation.check_point_estimate_residuals(result, derived_targets)
+        scales = np.maximum(np.abs(x0), 1.0)
+        result = optimize.least_squares(
+            residuals, x0, bounds=(lo, hi), x_scale=scales,
+            ftol=1e-12, xtol=1e-12, gtol=1e-12,
+        )
+        if not result.success:
+            raise ValueError(f"Exact inversion failed: {result.message}")
+        singular = np.linalg.svd(result.jac * scales, compute_uv=False)
+        if len(singular) < len(free) or singular[-1] <= singular[0] * 1e-7:
+            raise ValueError("Exact constraints are rank deficient; no unique point estimate.")
+        if np.any(np.abs(result.fun) > 1e-6):
+            raise ValueError("Inconsistent exact constraints or solution outside prior bounds.")
         theta = dict(zip(free, result.x))
         theta.update(fixed_fund)
         return self._point_output(
@@ -762,7 +890,7 @@ class Solver:
         self, given, want, dlogz=None, print_progress=False,
         return_results=False, return_validity=False, bandpass=None,
         input_mode=None, relation_scatter=None, sample_relation_scatter=False,
-        photometric_error_floor=None, warn_validity=None,
+        photometric_error_floor=None, warn_validity=None, return_metadata=False,
     ):
         """Infer requested quantities from exact or uncertain constraints.
 
@@ -780,8 +908,11 @@ class Solver:
             Display Dynesty progress.
         return_results : bool, default=False
             Include raw Dynesty results under ``'_results'``.
+        return_metadata : bool, default=False
+            Include mode, calibration choices and raw-sample column names under
+            ``'_metadata'``. Always available as ``solver.last_metadata``.
         return_validity : bool, default=False
-            Include calibration-domain flags under ``'_validity'``. The same
+            Include checked-bound flags under ``'_validity'``. The same
             report is always available as :attr:`last_validity`.
         bandpass : {'TESS', 'Kepler'}, optional
             Deprecated compatibility override for the legacy ``A_env``
@@ -807,12 +938,28 @@ class Solver:
         dict
             Requested point estimates or posterior arrays.
         """
-        validation.validate_given(given)
+        input_mode = self.input_mode if input_mode is None else _normalize_input_mode(input_mode)
+        validation.validate_given(given, input_mode=input_mode)
+        self.last_metadata = {
+            "input_mode": input_mode,
+            "population_prior_configured": self.population_prior is not None,
+            "population_prior_active": (
+                self.population_prior is not None and input_mode == "likelihood"
+            ),
+            "dnu_calibration": self.dnu_calibration,
+            "numax_correction": self.numax_correction,
+            "raw_sample_columns": [],
+        }
+        if want == "all" or want == ["all"] or want == ("all",):
+            available = set(required_fundamentals(given))
+            want = [name for name in validation.normalize_want("all")
+                    if set(required_fundamentals([name])) <= available]
         photometric_error_floor = (
             self.photometric_error_floor
             if photometric_error_floor is None
             else _normalize_photometric_error_floor(photometric_error_floor)
         )
+        self._current_photometric_floor = photometric_error_floor
         given = _apply_photometric_error_floor(
             given, photometric_error_floor
         )
@@ -844,11 +991,28 @@ class Solver:
 
         fixed, constraints = _parse_given(given)
 
-        if not constraints:
-            return self._point_estimate(
+        conditional_draw = (
+            use_population_prior and not constraints
+            and not any(name in DERIVED for name in fixed)
+            and any(name not in fixed for name in required_fundamentals(want))
+        )
+        if not constraints and not conditional_draw:
+            if use_population_prior and any(name in DERIVED for name in fixed) and any(
+                name not in fixed for name in required_fundamentals(list(want) + list(fixed))
+            ):
+                raise ValueError(
+                    "An exact derived inversion does not apply the population prior. "
+                    "Supply measurement uncertainties for population-informed inference, "
+                    "or disable population_prior for deterministic inversion."
+                )
+            self.last_metadata["population_prior_active"] = False
+            out = self._point_estimate(
                 fixed, want, bandpass, relation_scatter, warn_validity,
                 return_validity, sample_relation_scatter,
             )
+            if return_metadata:
+                out["_metadata"] = dict(self.last_metadata)
+            return out
 
         exact_derived = [name for name in fixed if name in DERIVED]
         if exact_derived:
@@ -868,6 +1032,12 @@ class Solver:
         )
 
         fixed_fund = {k: v for k, v in fixed.items() if k in FUNDAMENTAL}
+        self.last_metadata["likelihood_terms"] = list(likelihood_terms)
+        self.last_metadata["relation_scatter"] = dict(relation_scatter)
+        if {"BP_mag", "RP_mag", "BP_RP"} <= set(likelihood_terms):
+            raise ValueError("BP_mag, RP_mag and their colour cannot be independent likelihoods.")
+        if {"A_env", "amplitude_bolometric"} <= set(likelihood_terms):
+            raise ValueError("Amplitude aliases cannot be used as independent likelihoods.")
 
         active_names = list(want) + list(given)
         active_relations = required_relations(active_names)
@@ -880,6 +1050,18 @@ class Solver:
         free_fundamentals = [p for p in needed if p not in fixed_fund]
 
         if not free_fundamentals and not scatter_relations:
+            full_check = self._forward(fixed_fund, bandpass=bandpass)
+            diagnostics = {}
+            for name, distribution in likelihood_terms.items():
+                value = given[name]
+                gaussian = _gaussian_parameters(value)
+                diagnostics[name] = {"log_likelihood": float(distribution.logpdf(full_check[name]))}
+                if gaussian is not None:
+                    z = (full_check[name] - gaussian[0]) / gaussian[1]
+                    diagnostics[name]["standardized_residual"] = float(z)
+                    if abs(z) > 5:
+                        warnings.warn(f"Fixed model conflicts with {name} by {z:.1f} sigma.")
+            self.last_metadata["fixed_model_diagnostics"] = diagnostics
             # Every fundamental was pinned exactly, even though some other
             # given value was probabilistic (e.g. a redundant/consistency
             # check) -- nothing left to sample.
@@ -893,42 +1075,10 @@ class Solver:
                 out["_results"] = None
             if return_validity:
                 out["_validity"] = report
+            if return_metadata:
+                out["_metadata"] = dict(self.last_metadata)
             return out
 
-        if not likelihood_terms:
-            # Every given constraint landed on a fundamental and became a
-            # prior directly (see above), leaving nothing for the
-            # likelihood -- it's flat everywhere. That's not actually a
-            # sampling problem, it's a prior-predictive draw: sample the
-            # (possibly-overridden) priors directly instead of handing
-            # dynesty a constant log-likelihood, which it can technically
-            # handle but warns about ("likelihood plateau") and gains
-            # nothing from.
-            n = max(self.nlive, 2000)
-            u = self.rng.uniform(size=(n, len(free_fundamentals)))
-            fund = {p: priors[p].ppf(u[:, j]) for j, p in enumerate(free_fundamentals)}
-            for k, v in fixed_fund.items():
-                fund[k] = np.full(n, v)
-            offsets = self._draw_relation_offsets(
-                scatter_relations, relation_scatter, size=n
-            )
-            full = self._forward(
-                fund, bandpass=bandpass, relation_offsets=offsets
-            )
-            report = self._store_solution(
-                fund, full, bandpass, offsets, active_relations,
-                relation_scatter, True, warn_validity,
-            )
-            out = {name: full[name] for name in want}
-            if return_results:
-                out["_results"] = None
-            if return_validity:
-                out["_validity"] = report
-            return out
-
-        n_fundamentals = len(free_fundamentals)
-        ndim = n_fundamentals + len(scatter_relations)
-        standard_normal = Normal(backend="numpy")
         population_positions = {
             index: name
             for index, name in enumerate(free_fundamentals)
@@ -948,6 +1098,55 @@ class Solver:
                 conditioned=conditioned,
             )
 
+
+        if not likelihood_terms:
+            # Every given constraint landed on a fundamental and became a
+            # prior directly (see above), leaving nothing for the
+            # likelihood -- it's flat everywhere. That's not actually a
+            # sampling problem, it's a prior-predictive draw: sample the
+            # (possibly-overridden) priors directly instead of handing
+            # dynesty a constant log-likelihood, which it can technically
+            # handle but warns about ("likelihood plateau") and gains
+            # nothing from.
+            n = max(self.nlive, 2000)
+            u = self.rng.uniform(size=(n, len(free_fundamentals)))
+            fund = {p: priors[p].ppf(u[:, j]) for j, p in enumerate(free_fundamentals)
+                    if j not in population_positions}
+            if population_transform is not None:
+                positions = tuple(population_positions)
+                draws = np.asarray([population_transform.ppf(row[list(positions)]) for row in u])
+                for j, position in enumerate(positions):
+                    name = population_positions[position]
+                    coordinate = population_to_sampler_coordinate(name, draws[:, j])
+                    fund[name] = _from_sampler_coordinate(name, coordinate)
+            _validate_physical_draws(fund)
+            for k, v in fixed_fund.items():
+                fund[k] = np.full(n, v)
+            offsets = self._draw_relation_offsets(
+                scatter_relations, relation_scatter, size=n
+            )
+            full = self._forward(
+                fund, bandpass=bandpass, relation_offsets=offsets
+            )
+            report = self._store_solution(
+                fund, full, bandpass, offsets, active_relations,
+                relation_scatter, True, warn_validity,
+            )
+            out = {name: full[name] for name in want}
+            if return_results:
+                out["_results"] = None
+            if return_validity:
+                out["_validity"] = report
+            if return_metadata:
+                out["_metadata"] = dict(self.last_metadata)
+            return out
+
+        n_fundamentals = len(free_fundamentals)
+        ndim = n_fundamentals + len(scatter_relations)
+        self.last_metadata["raw_sample_columns"] = (
+            list(free_fundamentals) + [f"scatter_z:{name}" for name in scatter_relations]
+        )
+        standard_normal = Normal(backend="numpy")
         def prior_transform(u):
             """Transform a unit-cube point to internal sampler coordinates.
 
@@ -973,9 +1172,9 @@ class Solver:
                     )
             for index, name in enumerate(free_fundamentals):
                 if index not in population_positions:
-                    fundamentals[index] = _to_sampler_coordinate(
-                        name, priors[name].ppf(u[index])
-                    )
+                    draw = priors[name].ppf(u[index])
+                    _validate_physical_draws({name: draw})
+                    fundamentals[index] = _to_sampler_coordinate(name, draw)
             scatter_z = [
                 standard_normal.ppf(u[n_fundamentals + i])
                 for i, _ in enumerate(scatter_relations)
@@ -1026,7 +1225,7 @@ class Solver:
         results = sampler.results
 
         weights = np.exp(results.logwt - results.logz[-1])
-        eq_samples = resample_equal(results.samples, weights)
+        eq_samples = resample_equal(results.samples, weights, rstate=self.rng)
 
         fund = {
             p: _from_sampler_coordinate(p, eq_samples[:, i])
@@ -1057,6 +1256,8 @@ class Solver:
             out["_results"] = results
         if return_validity:
             out["_validity"] = report
+        if return_metadata:
+            out["_metadata"] = dict(self.last_metadata)
         return out
 
     def predict(self, want, bandpass=None, return_validity=False):
@@ -1112,6 +1313,9 @@ class Solver:
                 "predict() needs a previous solve() call to derive "
                 "quantities from -- call solve() first."
             )
+        if want == "all" or want == ["all"] or want == ("all",):
+            want = [name for name in validation.normalize_want("all")
+                    if set(required_fundamentals([name])) <= set(self._last_fund)]
         want = validation.normalize_want(want)
         bandpass = (
             self._last_bandpass if bandpass is None

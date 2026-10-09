@@ -22,12 +22,12 @@ def test_marcs_grid_matches_source_node():
 def test_extinction_matches_source_interpolation():
     # Direct interpolation through the original E(B-V) tables gives
     # A_BP=1.2443 and A_RP=0.7613 at this atmosphere and A_G=1.0 mag.
-    # The compact four-dimensional table remains within 0.005 mag.
+    # The compact four-dimensional table remains within 2e-6 mag at this exact grid node.
     assert rel.a_bp(1.0, 5750.0, 4.5, 0.0) == pytest.approx(
-        1.2443125, abs=0.005
+        1.2443125, abs=2e-6
     )
     assert rel.a_rp(1.0, 5750.0, 4.5, 0.0) == pytest.approx(
-        0.7613306, abs=0.005
+        0.7613306, abs=2e-6
     )
 
 
@@ -76,12 +76,12 @@ def test_photometric_validity_report_uses_marcs_domain():
         }
     )
     report = assess_validity(inside, ["BP_mag"])
-    assert report["Gaia_photometry"]["status"] == "within_calibration"
+    assert report["Gaia_photometry"]["status"] == "within_checked_bounds"
 
     outside = dict(inside)
     outside["A_G"] = MARCS_DOMAIN["A_G"][1] + 0.1
     report = assess_validity(outside, ["BP_mag"])
-    assert report["Gaia_photometry"]["status"] == "outside_calibration"
+    assert report["Gaia_photometry"]["status"] == "outside_checked_bounds"
 
 
 def test_numpy_and_jax_photometry_agree():

@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "scipy",
+    "threadpoolctl>=3",
     "dynesty",
     "matplotlib",
     "baldr[numpy] @ git+https://github.com/nielsenmb/Baldr.git@476f59ff4114226488f9e155c83593a725f0f232",

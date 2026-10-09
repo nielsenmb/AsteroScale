@@ -12,7 +12,8 @@ _default_solver = None
 
 def solve(
     given, want, nlive=None, priors=None, seed=None, preset=None,
-    input_mode=None, population_prior=None, **solve_kwargs,
+    input_mode=None, population_prior=None, dnu_calibration=None,
+    numax_correction=None, **solve_kwargs,
 ):
     """Solve a single stellar inference problem.
 
@@ -32,6 +33,10 @@ def solve(
         Named sampling configuration.
     input_mode : {'propagate', 'likelihood'}, optional
         Statistical interpretation of uncertain fundamental inputs.
+    dnu_calibration : {'solar_anchored', 'guggenberger2016'}, optional
+        Adopted solar renormalization or the original published reference function.
+    numax_correction : {'mu', 'none'}, optional
+        Approximate neutral molecular-weight correction or uncorrected scaling.
     population_prior : str, path-like or PopulationGMM, optional
         Correlated stellar-population GMM used in likelihood mode.
     **solve_kwargs
@@ -44,8 +49,13 @@ def solve(
     """
     global _default_solver
     if any(value is not None for value in
-           (nlive, priors, seed, preset, input_mode, population_prior)):
+           (nlive, priors, seed, preset, input_mode, population_prior,
+            dnu_calibration, numax_correction)):
         kwargs = {}
+        if dnu_calibration is not None:
+            kwargs["dnu_calibration"] = dnu_calibration
+        if numax_correction is not None:
+            kwargs["numax_correction"] = numax_correction
         if nlive is not None:
             kwargs["nlive"] = nlive
         if priors is not None:

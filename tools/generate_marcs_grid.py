@@ -197,7 +197,7 @@ def generate(grid_dir, output):
     coordinates, ebv, values = _load_source(grid_dir)
     regular = _regularize_spatial(coordinates, values)
     zero_index = int(np.flatnonzero(ebv == 0.0)[0])
-    bc = regular[..., zero_index, :]
+    bc = regular[..., zero_index, :].copy()
     bc += MBOL_ASTERSCALE - MBOL_SOURCE
     ag_axis, extinction = _regrid_extinction(regular, ebv)
 

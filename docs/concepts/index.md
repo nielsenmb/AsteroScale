@@ -8,4 +8,5 @@ amplitudes
 gaia-photometry
 sampling-and-priors
 calibration-and-scatter
+scientific-assumptions
 ```

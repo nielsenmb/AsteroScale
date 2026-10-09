@@ -184,3 +184,6 @@ retains the original independent priors. See the
 [population-prior training guide](https://asteroscale.readthedocs.io/en/latest/development/population-prior-training.html)
 for the catalogue schema, TRILEGAL adapter, weighting assumptions, and
 validation workflow.
+
+See [scientific assumptions and review fixes](docs/concepts/scientific-assumptions.md) for calibration sensitivity,
+statistical safeguards, and the deliberate omission of the TRILEGAL l=0, b=0 field.

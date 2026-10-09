@@ -118,3 +118,11 @@ To assess whether a signal is observable, compare an instrument-appropriate
 oscillation model with the local background and noise in the power spectrum.
 Do not add `amplitude_bolometric` or `A_gran` directly to a transit-depth error
 budget. The {doc}`../limitations` page lists the missing instrumental effects.
+
+## Granulation convention
+
+`A_gran` is the RMS amplitude of **each** of the two Kepler background
+components in Kallinger et al. (2014). Their total Kepler RMS is
+`sqrt(2) * A_gran`; converting that total to bolometric RMS also requires
+the Kepler bolometric correction. This is distinct from peak versus RMS
+conversion for a sinusoid. See [scientific assumptions](scientific-assumptions.md).

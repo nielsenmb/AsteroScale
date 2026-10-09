@@ -85,7 +85,7 @@ def to_population_coordinate(name, value):
     ----------
     name : {'M', 'R', 'Teff', 'FeH'}
         Fundamental-parameter name.
-    value : float
+    value : float or array-like
         Value in AsteroScale's public physical units.
 
     Returns
@@ -99,16 +99,16 @@ def to_population_coordinate(name, value):
     ValueError
         If a logarithmic coordinate is not strictly positive.
     """
-    value = float(value)
+    value = np.asarray(value, dtype=float)
     if name == "FeH":
         return value
     if name not in POPULATION_COORDINATES:
         raise ValueError(f"{name!r} is not represented by the population GMM.")
-    if value <= 0.0:
+    if np.any(~np.isfinite(value)) or np.any(value <= 0.0):
         raise ValueError(
             f"Exact {name!r} must be positive to condition the population GMM."
         )
-    return float(np.log10(value))
+    return np.log10(value)
 
 
 def population_to_sampler_coordinate(name, value):
@@ -118,7 +118,7 @@ def population_to_sampler_coordinate(name, value):
     ----------
     name : {'M', 'R', 'Teff', 'FeH'}
         Fundamental-parameter name.
-    value : float
+    value : float or array-like
         Value in the model's training coordinate.
 
     Returns
@@ -128,7 +128,7 @@ def population_to_sampler_coordinate(name, value):
         or metallicity in dex.
     """
     if name in ("M", "R", "FeH"):
-        return float(value)
+        return np.asarray(value)
     if name == "Teff":
-        return float(np.power(10.0, value))
+        return np.power(10.0, value)
     raise ValueError(f"{name!r} is not represented by the population GMM.")

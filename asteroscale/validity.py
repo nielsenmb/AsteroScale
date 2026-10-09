@@ -41,12 +41,13 @@ def _entry(condition, domain):
     """
     fraction = _fraction_true(condition)
     if fraction == 1.0:
-        status = "within_calibration"
+        status = "within_checked_bounds"
     elif fraction == 0.0:
-        status = "outside_calibration"
+        status = "outside_checked_bounds"
     else:
-        status = "partly_outside_calibration"
-    return {"status": status, "fraction_within": fraction, "domain": domain}
+        status = "partly_outside_checked_bounds"
+    return {"status": status, "fraction_within": fraction, "domain": domain,
+            "calibration_certified": False}
 
 
 def assess_validity(values, active_names):
@@ -100,12 +101,14 @@ def assess_validity(values, active_names):
 
     amplitude_names = active & {"amplitude_bolometric", "A_env"}
     if amplitude_names and all(name in values for name in ("L", "Teff")):
-        valid = np.asarray(values["Teff"]) < amplitude_red_edge(values["L"])
+        teff = np.asarray(values["Teff"])
+        valid = ((teff < amplitude_red_edge(values["L"]))
+                 & (teff >= 4000) & (teff <= 7500))
         for name in amplitude_names:
             report[name] = _entry(
                 valid,
                 "Teff below the adopted red edge of the delta-Scuti "
-                "instability strip",
+                "instability strip and 4000 <= Teff/K <= 7500 for the Kepler correction",
             )
 
     photometric = {
@@ -144,6 +147,16 @@ def assess_validity(values, active_names):
                 f"{MARCS_DOMAIN['A_G'][1]:.1f}"
             )
         report["Gaia_photometry"] = _entry(valid, domain)
+    if "dnu" in report:
+        report["dnu"]["unverified"] = [
+            "evolutionary state: early main sequence and core-helium burning are excluded",
+            "solar renormalization and systematic accuracy",
+        ]
+    if "numax" in report:
+        report["numax"]["unverified"] = ["ionization, helium abundance and Gamma_1"]
+    for name in active & {"A_gran", "b_gran_low", "b_gran_high", "FWHM_env"}:
+        report[name] = {"status": "applicability_unverified", "calibration_certified": False,
+                        "domain": "Empirical solar-like-oscillator relation; no complete domain check."}
     return report
 
 
@@ -156,7 +169,7 @@ def warn_outside_calibration(report):
         Output from :func:`assess_validity`.
     """
     for name, entry in report.items():
-        if entry["status"] == "within_calibration":
+        if entry["status"] in {"within_checked_bounds", "applicability_unverified"}:
             continue
         warnings.warn(
             f"{name} is {entry['status'].replace('_', ' ')}: "

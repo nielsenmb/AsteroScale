@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import csv
+import hashlib
 from pathlib import Path
 import re
 
@@ -176,7 +177,16 @@ def read_standard_catalogue(path):
 
 
 def write_standard_catalogue(catalogue, path):
-    """Write a normalized population catalogue as portable CSV."""
+    """Write a normalized population catalogue as portable CSV.
+
+    Parameters
+    ----------
+    catalogue : PopulationCatalogue
+        Rows and optional diagnostic columns to write. Metadata is not stored
+        in CSV; retain the training JSON report alongside it.
+    path : path-like
+        Destination filename.
+    """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     names = list(REQUIRED_COLUMNS) + [
@@ -198,24 +208,54 @@ def _normalized_name(name):
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def _read_whitespace_table(path):
-    """Read a whitespace table whose first non-empty line is the header."""
-    path = Path(path)
-    with path.open(encoding="utf-8") as stream:
-        lines = [line for line in stream if line.strip()]
-    if not lines:
-        raise ValueError(f"No data were found in {path}.")
-    header = lines[0].lstrip("#").split()
-    data_lines = [line for line in lines[1:] if not line.lstrip().startswith("#")]
-    if not data_lines:
+def _iter_whitespace_tables(path, chunk_size, manifest):
+    """Read bounded blocks and record source provenance in one pass.
+
+    Parameters
+    ----------
+    path : Path
+        Source whitespace catalogue.
+    chunk_size : int
+        Maximum raw rows held in memory.
+    manifest : dict
+        Mutable record receiving the checksum and row count.
+
+    Yields
+    ------
+    dict
+        Numeric columns in each block.
+    """
+    digest = hashlib.sha256()
+    header = None
+    block = []
+    rows = 0
+    with path.open("rb") as stream:
+        for raw in stream:
+            digest.update(raw)
+            line = raw.decode("utf-8").strip()
+            if not line:
+                continue
+            if header is None:
+                header = line.lstrip("#").split()
+                continue
+            if line.startswith("#"):
+                continue
+            block.append(line)
+            rows += 1
+            if len(block) == chunk_size:
+                data = np.loadtxt(block, ndmin=2)
+                if data.shape[1] != len(header):
+                    raise ValueError(f"Column count mismatch in {path}.")
+                yield {_normalized_name(name): data[:, j] for j, name in enumerate(header)}
+                block = []
+        if block:
+            data = np.loadtxt(block, ndmin=2)
+            if data.shape[1] != len(header):
+                raise ValueError(f"Column count mismatch in {path}.")
+            yield {_normalized_name(name): data[:, j] for j, name in enumerate(header)}
+    manifest.update(sha256=digest.hexdigest(), raw_rows=rows)
+    if rows == 0:
         raise ValueError(f"No data rows were found in {path}.")
-    data = np.loadtxt(data_lines, ndmin=2)
-    if data.shape[1] != len(header):
-        raise ValueError(
-            f"{path} has {len(header)} column names but {data.shape[1]} values "
-            "per row."
-        )
-    return {_normalized_name(name): data[:, index] for index, name in enumerate(header)}
 
 
 def _column(table, aliases, required=True):
@@ -236,6 +276,8 @@ def read_trilegal(
     teff_range=None,
     R_range=None,
     feh_kind="mh",
+    chunk_size=100_000,
+    field_areas_deg2=None,
 ):
     """Convert one or more TRILEGAL outputs to the generic catalogue.
 
@@ -249,6 +291,14 @@ def read_trilegal(
         true distance-modulus column such as ``m-M0``.
     teff_range : pair of float, optional
         Inclusive effective-temperature limits in kelvin.
+    R_range : pair of float, optional
+        Inclusive radius limits in solar units.
+    chunk_size : int, default=100000
+        Raw rows loaded at once; cuts are applied before blocks are retained.
+    field_areas_deg2 : sequence of float, optional
+        Simulated areas aligned with paths. Row weights become inverse area,
+        representing equal solid angle per direction. Omitted areas assume
+        equal areas; missing sightlines are not reconstructed by this weighting.
     feh_kind : {'mh', 'feh'}, default='mh'
         Meaning assigned to TRILEGAL's metallicity column. Standard TRILEGAL
         output is ``[M/H]``. Treating it as ``[Fe/H]`` is an approximation
@@ -277,63 +327,74 @@ def read_trilegal(
     if feh_kind not in {"mh", "feh"}:
         raise ValueError("feh_kind must be either 'mh' or 'feh'.")
 
+    if not isinstance(chunk_size, int) or chunk_size < 1:
+        raise ValueError("chunk_size must be a positive integer.")
+    areas = np.ones(len(paths)) if field_areas_deg2 is None else np.asarray(field_areas_deg2)
+    if areas.shape != (len(paths),) or np.any(~np.isfinite(areas)) or np.any(areas <= 0):
+        raise ValueError("Supply one finite positive field area per input file.")
     chunks = []
-    for path in paths:
-        table = _read_whitespace_table(path)
+    manifests = []
+    for path, area in zip(paths, areas):
+        manifest = {"source": str(path), "retained_rows": 0,
+                    "field_area_deg2": None if field_areas_deg2 is None else float(area)}
+        manifests.append(manifest)
+        for table in _iter_whitespace_tables(path, chunk_size, manifest):
 
-        mass = _column(table, ("Mact", "m_act", "current_mass", "mass", "mcur"))
+            mass = _column(table, ("Mact", "m_act", "current_mass", "mass", "mcur"))
 
-        log_l = _column(table, ("logL", "log_l", "loglum"))
+            log_l = _column(table, ("logL", "log_l", "loglum"))
 
-        log_teff = _column(table, ("logTe", "logTeff", "log_teff"))
+            log_teff = _column(table, ("logTe", "logTeff", "log_teff"))
 
-        metallicity = _column(table, ("[M/H]", "MH", "FeH", "metallicity"))
+            metallicity = _column(table, ("[M/H]", "MH", "FeH", "metallicity"))
 
-        log_age = _column(table, ("logAge", "log_age"), required=False)
+            log_age = _column(table, ("logAge", "log_age"), required=False)
 
-        distance_modulus = _column(table, ("m-M0", "mM0", "distance_modulus"), required=False)
+            distance_modulus = _column(table, ("m-M0", "mM0", "distance_modulus"), required=False)
 
-        teff = 10.0**log_teff
-        radius = np.sqrt(10.0**log_l) * (TEFF_SUN / teff) ** 2
-        keep = np.ones(len(mass), dtype=bool)
-        if max_distance_pc is not None:
-            if max_distance_pc <= 0.0:
-                raise ValueError("max_distance_pc must be positive.")
-            if distance_modulus is None:
-                raise ValueError("A distance-modulus column is required for a distance cut.")
+            teff = 10.0**log_teff
+            radius = np.sqrt(10.0**log_l) * (TEFF_SUN / teff) ** 2
+            keep = np.ones(len(mass), dtype=bool)
+            if max_distance_pc is not None:
+                if max_distance_pc <= 0.0:
+                    raise ValueError("max_distance_pc must be positive.")
+                if distance_modulus is None:
+                    raise ValueError("A distance-modulus column is required for a distance cut.")
             
-            distance_pc = 10.0 ** (distance_modulus / 5.0 + 1.0)
+                distance_pc = 10.0 ** (distance_modulus / 5.0 + 1.0)
 
-            keep &= distance_pc <= max_distance_pc
+                keep &= distance_pc <= max_distance_pc
 
-        if teff_range is not None:
+            if teff_range is not None:
 
-            low, high = teff_range
+                low, high = teff_range
 
-            if not 0.0 < low < high:
-                raise ValueError("teff_range must contain increasing positive limits.")
+                if not 0.0 < low < high:
+                    raise ValueError("teff_range must contain increasing positive limits.")
             
-            keep &= (teff >= low) & (teff <= high)
+                keep &= (teff >= low) & (teff <= high)
 
-        if R_range is not None:
+            if R_range is not None:
         
-            low, high = R_range
+                low, high = R_range
 
-            if not 0.0 < low < high:
-                raise ValueError("R_range must contain increasing positive limits.")
+                if not 0.0 < low < high:
+                    raise ValueError("R_range must contain increasing positive limits.")
             
-            keep &= (radius >= low) & (radius <= high)
+                keep &= (radius >= low) & (radius <= high)
 
-        chunk = {
-            "mass": mass[keep],
-            "radius": radius[keep],
-            "teff": teff[keep],
-            "feh": metallicity[keep],
-            "weight": np.ones(np.count_nonzero(keep)),
-        }
-        if log_age is not None:
-            chunk["age"] = 10.0**log_age[keep]
-        chunks.append(chunk)
+            chunk = {
+                "mass": mass[keep],
+                "radius": radius[keep],
+                "teff": teff[keep],
+                "feh": metallicity[keep],
+                "weight": np.full(np.count_nonzero(keep), 1.0 / area),
+            }
+            if log_age is not None:
+                chunk["age"] = 10.0**log_age[keep]
+            chunks.append(chunk)
+
+            manifest["retained_rows"] += int(np.count_nonzero(keep))
 
     if not sum(len(chunk["mass"]) for chunk in chunks):
         raise ValueError("No TRILEGAL rows remain after the requested cuts.")
@@ -350,6 +411,10 @@ def read_trilegal(
             "sources": [str(path) for path in paths],
             "max_distance_pc": max_distance_pc,
             "teff_range": teff_range,
+            "R_range": R_range,
+            "source_manifest": manifests,
+            "weighting": "equal represented solid angle; counts divided by supplied area"
+                         if field_areas_deg2 is not None else "equal row weights; equal areas assumed",
             "metallicity_interpretation": feh_kind,
         },
     )
